@@ -1,5 +1,6 @@
+from .chunker import chunk
 from .cleaner import clean
 from .loader import load
-from .models import Document
+from .models import Chunk, Document
 
-__all__ = ["load", "clean", "Document"]
+__all__ = ["load", "clean", "chunk", "Document", "Chunk"]
