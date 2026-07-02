@@ -4,7 +4,8 @@
 faiss-cpu==1.8.0
 
 # HTTP client for Foundry Local's OpenAI-compatible REST API
-openai==1.35.3
+# Requires >=1.57.0 for compatibility with httpx 0.28+ (proxies param removed)
+openai>=1.57.0
 
 # Numerical computing (FAISS dependency)
 numpy==1.26.4
