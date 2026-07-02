@@ -1,0 +1,40 @@
+# ── Core RAG dependencies ────────────────────────────────────────────────────
+
+# Vector search (in-process, no server required)
+faiss-cpu==1.8.0
+
+# HTTP client for Foundry Local's OpenAI-compatible REST API
+openai==1.35.3
+
+# Numerical computing (FAISS dependency)
+numpy==1.26.4
+
+# ── Document ingestion ───────────────────────────────────────────────────────
+
+# PDF parsing
+pymupdf==1.24.5
+
+# DOCX parsing
+python-docx==1.1.2
+
+# ── CLI and developer experience ─────────────────────────────────────────────
+
+# Rich terminal output (tables, progress bars, colour)
+rich==13.7.1
+
+# ── Development and testing ──────────────────────────────────────────────────
+
+# Test runner
+pytest==8.2.2
+
+# Code formatter
+black==24.4.2
+
+# Import sorter
+isort==5.13.2
+
+# Linter
+flake8==7.0.0
+
+# Environment variable management
+python-dotenv==1.0.1
