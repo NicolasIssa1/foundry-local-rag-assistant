@@ -1,0 +1,57 @@
+Introduction to Retrieval-Augmented Generation (RAG)
+
+What is RAG?
+
+Retrieval-Augmented Generation (RAG) is an AI architecture that enhances a language
+model's responses by supplying it with relevant information retrieved from an external
+knowledge base at query time. Unlike a standard language model that relies entirely on
+knowledge encoded during training, a RAG system can access up-to-date or domain-specific
+documents that were never part of the training data.
+
+This makes RAG especially valuable in enterprise settings where:
+- Documents change frequently (policies, regulations, product specs).
+- Information is proprietary and cannot be used to fine-tune a public model.
+- Answers must be traceable back to a specific source.
+
+How RAG Works
+
+A RAG pipeline has two phases:
+
+1. Indexing Phase (run once, or when documents change)
+   Documents are loaded from disk, split into overlapping text chunks, and converted into
+   numerical vectors called embeddings. These vectors capture the semantic meaning of each
+   chunk and are stored in a vector index alongside the original text.
+
+2. Query Phase (run on every user question)
+   The user's question is converted into an embedding using the same model. The vector
+   index is searched for the chunks whose embeddings are closest to the question embedding.
+   Those chunks are inserted into the prompt as context, and the language model generates
+   an answer grounded in that context.
+
+Key Concepts
+
+Embeddings
+   An embedding is a fixed-length list of floating-point numbers that represents the
+   meaning of a piece of text. Two pieces of text with similar meaning will have embeddings
+   that are close together in vector space, even if they use different words.
+
+Chunking
+   Because language models have a limited context window, documents must be split into
+   smaller pieces called chunks. A typical chunk is 256-512 tokens. Chunks overlap slightly
+   so that sentences at a boundary appear in at least one complete chunk.
+
+Vector Search
+   Vector search (also called semantic search or approximate nearest-neighbour search)
+   finds the chunks whose embeddings are most similar to the query embedding. The most
+   common similarity measure is cosine similarity.
+
+Why Local RAG?
+
+Running a RAG pipeline entirely on a local machine — with no cloud API calls — provides:
+- Data privacy: sensitive documents never leave the device.
+- Zero latency variance: no network round-trips.
+- Offline capability: works without an internet connection.
+- Cost: no per-token cloud API charges.
+
+Microsoft Foundry Local enables exactly this by running both the embedding model and the
+language model as local REST endpoints, compatible with the standard OpenAI API format.
