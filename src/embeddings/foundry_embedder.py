@@ -5,12 +5,14 @@ _MAX_BATCH_SIZE = 64
 
 
 class FoundryEmbedder:
-    """Converts text strings into embedding vectors using the Foundry Local SDK.
+    """Converts text strings into embedding vectors via Foundry Local's
+    OpenAI-compatible REST API.
 
-    Wraps the native EmbeddingClient obtained from FoundryRuntime:
+    foundry-local-sdk 0.5.1 is a control-plane SDK only (no native embedding
+    client), so this wraps the openai.OpenAI client obtained from FoundryRuntime:
 
         with FoundryRuntime() as runtime:
-            embedder = FoundryEmbedder(runtime.get_embedding_client())
+            embedder = FoundryEmbedder(runtime.get_embedding_client(), runtime.embed_model_id)
 
     Public interface is intentionally identical to the OpenAI-backed Embedder
     so that Retriever and any other consumer can use either backend without
@@ -38,8 +40,8 @@ class FoundryEmbedder:
         vectors: list[list[float]] = []
         for batch_start in range(0, len(texts), _MAX_BATCH_SIZE):
             batch = texts[batch_start : batch_start + _MAX_BATCH_SIZE]
-            response = self._client.generate_embeddings(batch)
-            # The SDK returns embeddings in the same order as the input.
+            response = self._client.embeddings.create(model=self._model, input=batch)
+            # The API returns embeddings in the same order as the input.
             # We iterate .data directly without re-sorting.
             vectors.extend(item.embedding for item in response.data)
 

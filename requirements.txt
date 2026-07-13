@@ -1,8 +1,9 @@
 # ── Foundry Local SDK ────────────────────────────────────────────────────────
 
-# Microsoft Foundry Local Python SDK — native in-process inference (macOS / Linux)
+# Microsoft Foundry Local Python SDK — self-contained native SDK (no external
+# 'foundry' CLI/service required). Requires Python >=3.11.
 # Windows uses the WinML variant; the platform guard keeps CI cross-platform.
-foundry-local-sdk; sys_platform != "win32"
+foundry-local-sdk>=1.0; sys_platform != "win32"
 
 # ── Core RAG dependencies ────────────────────────────────────────────────────
 

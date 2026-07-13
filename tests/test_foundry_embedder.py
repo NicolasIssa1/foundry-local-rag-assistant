@@ -1,8 +1,9 @@
 """
-Tests for FoundryEmbedder — the Foundry Local SDK embedding backend.
+Tests for FoundryEmbedder — the Foundry Local OpenAI-compatible embedding backend.
 
-All tests mock the native EmbeddingClient so no Foundry Local installation
-is required. The mock interface matches what the SDK actually returns:
+All tests mock the openai.OpenAI client so no Foundry Local installation
+is required. The mock interface matches what the real client returns:
+  client.embeddings.create(model=..., input=...) -> response
   response.data  →  list of objects each with a .embedding attribute.
 """
 from __future__ import annotations
@@ -30,10 +31,9 @@ def _mock_response(n: int, dim: int = 4) -> MagicMock:
 
 
 def _embedder_with_mock(mock_response) -> tuple[FoundryEmbedder, MagicMock]:
-    """Return a FoundryEmbedder whose internal SDK client is fully mocked."""
+    """Return a FoundryEmbedder whose internal openai client is fully mocked."""
     mock_client = MagicMock()
-    mock_client.generate_embeddings.return_value = mock_response
-    mock_client.generate_embedding.return_value = mock_response
+    mock_client.embeddings.create.return_value = mock_response
     return FoundryEmbedder(client=mock_client, model="qwen3-embedding-0.6b"), mock_client
 
 
@@ -87,17 +87,17 @@ def test_embed_vector_dimension_matches_model_output():
 
 # ── embed() — SDK call behaviour ──────────────────────────────────────────────
 
-def test_embed_calls_generate_embeddings_once_for_small_batch():
+def test_embed_calls_embeddings_create_once_for_small_batch():
     embedder, mock_client = _embedder_with_mock(_mock_response(2))
     embedder.embed(["a", "b"])
-    assert mock_client.generate_embeddings.call_count == 1
+    assert mock_client.embeddings.create.call_count == 1
 
 
-def test_embed_passes_texts_to_generate_embeddings():
+def test_embed_passes_texts_to_embeddings_create():
     texts = ["hello", "world"]
     embedder, mock_client = _embedder_with_mock(_mock_response(2))
     embedder.embed(texts)
-    mock_client.generate_embeddings.assert_called_once_with(texts)
+    mock_client.embeddings.create.assert_called_once_with(model="qwen3-embedding-0.6b", input=texts)
 
 
 def test_embed_batches_large_input():
@@ -108,12 +108,12 @@ def test_embed_batches_large_input():
     second_response = _mock_response(5)
 
     mock_client = MagicMock()
-    mock_client.generate_embeddings.side_effect = [first_response, second_response]
+    mock_client.embeddings.create.side_effect = [first_response, second_response]
 
     embedder = FoundryEmbedder(client=mock_client)
     result = embedder.embed([f"text {i}" for i in range(n)])
 
-    assert mock_client.generate_embeddings.call_count == 2
+    assert mock_client.embeddings.create.call_count == 2
     assert len(result) == n
 
 
@@ -123,15 +123,15 @@ def test_embed_second_batch_receives_remaining_texts():
     texts = [f"t{i}" for i in range(n)]
 
     mock_client = MagicMock()
-    mock_client.generate_embeddings.side_effect = [
+    mock_client.embeddings.create.side_effect = [
         _mock_response(_MAX_BATCH_SIZE),
         _mock_response(3),
     ]
 
     FoundryEmbedder(client=mock_client).embed(texts)
 
-    first_call_texts = mock_client.generate_embeddings.call_args_list[0].args[0]
-    second_call_texts = mock_client.generate_embeddings.call_args_list[1].args[0]
+    first_call_texts = mock_client.embeddings.create.call_args_list[0].kwargs["input"]
+    second_call_texts = mock_client.embeddings.create.call_args_list[1].kwargs["input"]
     assert first_call_texts == texts[:_MAX_BATCH_SIZE]
     assert second_call_texts == texts[_MAX_BATCH_SIZE:]
 
@@ -160,7 +160,7 @@ def test_embed_does_not_call_sdk_on_empty_list():
     embedder, mock_client = _embedder_with_mock(_mock_response(1))
     with pytest.raises(ValueError):
         embedder.embed([])
-    mock_client.generate_embeddings.assert_not_called()
+    mock_client.embeddings.create.assert_not_called()
 
 
 # ── embed_one() ───────────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ def test_embed_one_returns_first_element_of_embed():
     dim = 8
     response = _mock_response(1, dim=dim)
     mock_client = MagicMock()
-    mock_client.generate_embeddings.return_value = response
+    mock_client.embeddings.create.return_value = response
     embedder = FoundryEmbedder(client=mock_client)
 
     single = embedder.embed_one("hello")

@@ -18,6 +18,7 @@ MANIFEST
 
 # Virtual environments
 .venv/
+.venv-py39-backup/
 venv/
 env/
 ENV/
