@@ -1,3 +1,9 @@
+# ── Foundry Local SDK ────────────────────────────────────────────────────────
+
+# Microsoft Foundry Local Python SDK — native in-process inference (macOS / Linux)
+# Windows uses the WinML variant; the platform guard keeps CI cross-platform.
+foundry-local-sdk; sys_platform != "win32"
+
 # ── Core RAG dependencies ────────────────────────────────────────────────────
 
 # Vector search (in-process, no server required)
