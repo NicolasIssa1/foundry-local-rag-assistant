@@ -1,6 +1,6 @@
 """Tests for the prompt builder — pure string logic, no I/O needed."""
 import pytest
-from src.prompt.builder import build
+from src.prompt.builder import build, format_sources
 from src.prompt.templates import SYSTEM_PROMPT, NO_CONTEXT_PLACEHOLDER
 from src.ingestion.models import Chunk
 
@@ -158,3 +158,121 @@ def test_build_single_chunk_no_stray_numbering():
     result = build([_chunk()], "q")
     assert "[2]" not in result
     assert "[0]" not in result
+
+
+# ── format_sources() — return type ─────────────────────────────────────────────
+
+def test_format_sources_returns_string():
+    assert isinstance(format_sources([_chunk()]), str)
+
+
+def test_format_sources_starts_with_header():
+    result = format_sources([_chunk()])
+    assert result.startswith("Sources:")
+
+
+# ── format_sources() — one source ───────────────────────────────────────────────
+
+def test_format_sources_single_source_shows_filename():
+    result = format_sources([_chunk(source="/data/report.txt")])
+    assert "report.txt" in result
+
+
+def test_format_sources_single_source_shows_page():
+    result = format_sources([_chunk(page=3)])
+    assert "page 3" in result
+
+
+def test_format_sources_single_source_uses_filename_not_full_path():
+    result = format_sources([_chunk(source="/very/long/path/report.txt")])
+    assert "report.txt" in result
+    assert "/very/long/path/" not in result
+
+
+def test_format_sources_single_source_numbered_1():
+    result = format_sources([_chunk()])
+    assert "[1]" in result
+
+
+# ── format_sources() — deduplication within one document ────────────────────────
+
+def test_format_sources_dedupes_multiple_chunks_same_source_and_page():
+    chunks = [
+        _chunk(text="first", source="/data/report.txt", page=1),
+        _chunk(text="second", source="/data/report.txt", page=1),
+        _chunk(text="third", source="/data/report.txt", page=1),
+    ]
+    result = format_sources(chunks)
+    assert result.count("report.txt") == 1
+
+
+def test_format_sources_does_not_dedupe_different_pages_of_same_document():
+    chunks = [
+        _chunk(source="/data/report.pdf", page=1),
+        _chunk(source="/data/report.pdf", page=2),
+    ]
+    result = format_sources(chunks)
+    assert "page 1" in result
+    assert "page 2" in result
+    assert result.count("report.pdf") == 2
+
+
+# ── format_sources() — multiple documents ────────────────────────────────────────
+
+def test_format_sources_shows_multiple_different_documents():
+    chunks = [
+        _chunk(source="/data/report.txt", page=1),
+        _chunk(source="/data/guide.md", page=1),
+    ]
+    result = format_sources(chunks)
+    assert "report.txt" in result
+    assert "guide.md" in result
+
+
+def test_format_sources_numbers_dedupe_sequentially_not_by_raw_rank():
+    """Three chunks from the same doc + one from another must number [1], [2] — not [1], [4]."""
+    chunks = [
+        _chunk(source="/data/report.txt", page=1),
+        _chunk(source="/data/report.txt", page=1),
+        _chunk(source="/data/report.txt", page=1),
+        _chunk(source="/data/guide.md", page=1),
+    ]
+    result = format_sources(chunks)
+    assert "[1]" in result
+    assert "[2]" in result
+    assert "[3]" not in result
+
+
+def test_format_sources_order_matches_first_occurrence_relevance_order():
+    chunks = [
+        _chunk(source="/data/best.txt", page=1),
+        _chunk(source="/data/second.txt", page=1),
+    ]
+    result = format_sources(chunks)
+    assert result.index("best.txt") < result.index("second.txt")
+
+
+# ── format_sources() — missing/unusual metadata does not crash ──────────────────
+
+def test_format_sources_none_page_does_not_crash():
+    chunk = _chunk(page=None)
+    result = format_sources([chunk])
+    assert "report.txt" in result
+
+
+def test_format_sources_empty_source_does_not_crash():
+    chunk = _chunk(source="")
+    result = format_sources([chunk])
+    assert isinstance(result, str)
+
+
+# ── format_sources() — empty chunk list ──────────────────────────────────────────
+
+def test_format_sources_empty_list_does_not_crash():
+    result = format_sources([])
+    assert isinstance(result, str)
+
+
+def test_format_sources_empty_list_says_none():
+    result = format_sources([])
+    assert "none" in result.lower()

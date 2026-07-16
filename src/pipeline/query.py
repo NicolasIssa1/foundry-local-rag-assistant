@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, NamedTuple
 
 from ..embeddings.foundry_embedder import FoundryEmbedder
+from ..ingestion.models import Chunk
 from ..llm.client import FoundryRuntime
-from ..prompt.builder import build
+from ..prompt.builder import build, format_sources
 from ..retrieval.retriever import Retriever
 from ..vectorstore.index import VectorIndex
 from ..vectorstore.store import ChunkStore
@@ -13,6 +14,13 @@ from ..vectorstore.store import ChunkStore
 _INDEX_FILE = "faiss.index"
 _DB_FILE = "chunks.db"
 DEFAULT_K = 5
+
+
+class QueryResult(NamedTuple):
+    """The generated answer paired with the chunks it was grounded in."""
+
+    answer: str
+    sources: list[Chunk]
 
 
 def query(
@@ -23,7 +31,7 @@ def query(
     k: int = DEFAULT_K,
     stream: bool = True,
     verbose: bool = True,
-) -> str:
+) -> QueryResult:
     """Answer a question using the pre-built index in index_dir.
 
     Steps:
@@ -31,9 +39,11 @@ def query(
       2. Embed the question with the provided embedder.
       3. Retrieve the top-k most relevant chunks.
       4. Build a RAG prompt with source citations.
-      5. Call the chat model (streaming by default) and return the answer.
+      5. Call the chat model (streaming by default) and print the answer.
+      6. Print a Sources section built directly from the retrieved chunks
+         (never from the model's own output).
 
-    Returns the complete answer string.
+    Returns a QueryResult(answer, sources).
     """
     index_dir = Path(index_dir)
     index_path = index_dir / _INDEX_FILE
@@ -73,5 +83,11 @@ def query(
         answer = runtime.chat(messages)
         answer_parts.append(answer)
 
+    # ── Sources ──────────────────────────────────────────────────────────────
+    # Always shown, regardless of verbose — built from the retrieved chunks
+    # themselves, never from model output.
+    print()
+    print(format_sources(chunks))
+
     store.close()
-    return "".join(answer_parts)
+    return QueryResult(answer="".join(answer_parts), sources=chunks)

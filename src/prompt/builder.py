@@ -33,3 +33,33 @@ def build(chunks: list[Chunk], question: str) -> str:
         context=context,
         question=question,
     )
+
+
+def format_sources(chunks: list[Chunk]) -> str:
+    """Render a deduplicated 'Sources' section directly from retrieved chunks.
+
+    Every line comes straight from a Chunk's real metadata (never from the
+    model's own output). Chunks are deduplicated by (filename, page) so
+    multiple chunks from the same page of the same document collapse into
+    one entry; order matches retrieval relevance (first occurrence wins).
+    """
+    if not chunks:
+        return "Sources: (none)"
+
+    seen: set[tuple[str, object]] = set()
+    lines: list[str] = []
+    for chunk in chunks:
+        filename = Path(chunk.source).name if chunk.source else "(unknown source)"
+        page = getattr(chunk, "page", None)
+        key = (filename, page)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        rank = len(lines) + 1
+        if page is not None:
+            lines.append(f"  [{rank}] {filename} (page {page})")
+        else:
+            lines.append(f"  [{rank}] {filename}")
+
+    return "Sources:\n" + "\n".join(lines)
