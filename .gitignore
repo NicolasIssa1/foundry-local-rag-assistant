@@ -70,3 +70,6 @@ logs/
 # Data (uncomment if your documents are sensitive or large)
 # data/
 # !data/.gitkeep
+
+# Generated vector index
+data/index/
