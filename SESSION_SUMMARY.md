@@ -1,4 +1,4 @@
-# Session Summary — 2026-07-16 Checkpoint
+# Session Summary — 2026-07-16 Checkpoint (M6 relevance filtering)
 
 ## Project status
 
@@ -6,58 +6,51 @@
   retrieval, prompt builder) — complete.
 - **M5** (Foundry Local SDK integration for embeddings and chat) —
   complete and validated end-to-end with the real SDK.
+- **M6** (CLI/quality polish) — in progress: source display and
+  relevance filtering are complete; remaining M6 items are listed below.
 
 ## What we completed this session
 
-1. **Resolved the SDK version mismatch.** The root cause diagnosed last
-   session was confirmed: the environment had `foundry-local-sdk==0.5.1`
-   (a legacy, control-plane-only SDK with no chat/embedding methods)
-   installed under Python 3.9. The fix was to run **Python 3.12.13** with
-   **foundry-local-sdk 1.2.3**, the current self-contained SDK that bundles
-   native ONNX Runtime and needs no external `foundry` CLI/service.
-2. **Restored the five M5 files** to their correct 1.2.3-targeted
-   implementation (the design that existed before the temporary 0.5.1
-   adaptation in commit `8394f68`):
-   - `src/llm/client.py`
-   - `src/embeddings/foundry_embedder.py`
-   - `tests/test_foundry_embedder.py`
-   - `main.py`
-   - `scripts/demo_m5.py`
-
-   Confirmed imports use `from foundry_local_sdk import Configuration,
-   FoundryLocalManager`.
-3. **Full test suite passes**: **206 passed, 1 skipped, 0 failed.**
-4. **Ran the real `scripts/demo_m5.py` live demo** against the actual
-   Foundry Local 1.2.3 SDK — completed successfully end-to-end:
-   - 2 documents loaded
-   - 7 chunks created
-   - embedding dimension: 1024
-   - FAISS index saved to `data/index/`
-   - retrieval succeeded
-   - local answer generation succeeded using `qwen2.5-0.5b` (embedding
-     model: `qwen3-embedding-0.6b`)
-5. **Committed and pushed M5** as `ce29be7` — "fix(m5): restore Foundry
-   Local SDK 1.2.3 integration".
-6. **Committed and pushed housekeeping** as `db110d5` — "chore: ignore
-   generated vector index":
-   - deleted `.venv-py39-backup/` (the old Python 3.9 venv, no longer
-     needed now that 3.12 + SDK 1.2.3 is confirmed stable)
-   - added `data/index/` to `.gitignore` (generated artifact, not source)
+1. **Source-display feature — committed as `47bd9b9`.**
+   Query results now display a deterministic, deduplicated Sources
+   section built directly from the retrieved chunks' real metadata
+   (filename + page), rather than relying on the LLM to format or
+   invent citations.
+2. **Relevance-filter feature — committed as `d92ea27`.**
+   - Retrieval uses `faiss.IndexFlatL2`: **squared L2 distance**, where
+     **lower scores mean greater similarity**.
+   - Default threshold is **1.25**, configured in
+     `src/retrieval/retriever.py::DEFAULT_DISTANCE_THRESHOLD`.
+   - Retrieved results whose distance is above the threshold are
+     filtered out.
+   - When zero chunks pass the threshold:
+     - the chat model is **not** called
+     - the deterministic response is: *"I could not find relevant
+       information in the indexed documents."*
+     - no Sources section is printed
+3. **Real end-to-end tests confirmed the behavior:**
+   - `"What is retrieval-augmented generation?"` → returns grounded
+     content and a Sources section.
+   - `"Who won the 2026 FIFA World Cup?"` → returns zero chunks, no
+     hallucination.
+   - `"What is the weather in Beirut today?"` → returns zero chunks, no
+     hallucination.
+4. **Current test baseline: 257 passed, 1 skipped, 0 failed.**
 
 ## Current repository state
 
 - Working tree is **clean** and **fully synchronized with `origin/main`**
-  at `db110d5`.
+  at `d92ea27`.
 - Environment: Python **3.12.13**, `foundry-local-sdk` **1.2.3**.
 
 ## Remaining work (next session)
 
-1. Validate the normal `main.py index` and `main.py query` CLI commands
-   (not just the demo script) against the real SDK.
-2. Test both answerable and unanswerable questions to check retrieval
-   and generation behavior at the edges.
-3. Verify source citations and grounding in generated answers.
-4. Improve chat-model answer quality (the current `qwen2.5-0.5b` answers
-   in the live demo were serviceable but noticeably weak/imprecise).
-5. Complete **M6**: CLI polish and error handling.
-6. Evaluation, README, GitHub cleanup, and the five-minute presentation.
+1. Benchmark and select a stronger local chat model (current
+   `qwen2.5-0.5b` answers are grounded but noticeably weak/imprecise).
+2. Avoid loading the chat model during index-only commands (`main.py
+   index` currently loads both embedding and chat models unnecessarily).
+3. CLI polish and error handling.
+4. Evaluation dataset and timing measurements.
+5. README and architecture documentation updates.
+6. Final GitHub cleanup.
+7. Five-minute presentation and demo preparation.
