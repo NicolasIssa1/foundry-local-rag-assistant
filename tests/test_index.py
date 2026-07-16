@@ -206,6 +206,63 @@ def test_search_k_zero_raises_value_error():
         idx.search(V0, k=0)
 
 
+# ── search_with_scores() ─────────────────────────────────────────────────────
+
+def test_search_with_scores_returns_list_of_tuples():
+    idx = VectorIndex(DIM)
+    idx.add([V0, V1])
+    result = idx.search_with_scores(V0, k=2)
+    assert isinstance(result, list)
+    assert all(isinstance(r, tuple) and len(r) == 2 for r in result)
+
+
+def test_search_with_scores_exact_match_has_zero_distance():
+    idx = VectorIndex(DIM)
+    idx.add([V0, V1, V2])
+    result = idx.search_with_scores(V0, k=1)
+    chunk_id, distance = result[0]
+    assert chunk_id == 0
+    assert distance == pytest.approx(0.0, abs=1e-6)
+
+
+def test_search_with_scores_orders_closest_first():
+    idx = VectorIndex(DIM)
+    idx.add([V0, V1, V2, V3])
+    result = idx.search_with_scores(V0, k=4)
+    distances = [d for _, d in result]
+    assert distances == sorted(distances)
+
+
+def test_search_with_scores_orthogonal_vectors_have_larger_distance():
+    """L2 distance from an exact match (0) must be smaller than to an orthogonal vector."""
+    idx = VectorIndex(DIM)
+    idx.add([V0, V1])
+    result = idx.search_with_scores(V0, k=2)
+    by_id = dict(result)
+    assert by_id[0] < by_id[1]
+
+
+def test_search_with_scores_empty_index_returns_empty_list():
+    idx = VectorIndex(DIM)
+    result = idx.search_with_scores(V0, k=5)
+    assert result == []
+
+
+def test_search_with_scores_no_minus_one_sentinels():
+    idx = VectorIndex(DIM)
+    idx.add([V0])
+    result = idx.search_with_scores(V0, k=5)
+    assert all(i != -1 for i, _ in result)
+
+
+def test_search_matches_ids_from_search_with_scores():
+    idx = VectorIndex(DIM)
+    idx.add([V0, V1, V2, V3])
+    ids_only = idx.search(V0, k=3)
+    ids_with_scores = [i for i, _ in idx.search_with_scores(V0, k=3)]
+    assert ids_only == ids_with_scores
+
+
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def test_save_creates_file(tmp_path):

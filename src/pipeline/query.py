@@ -7,13 +7,14 @@ from ..embeddings.foundry_embedder import FoundryEmbedder
 from ..ingestion.models import Chunk
 from ..llm.client import FoundryRuntime
 from ..prompt.builder import build, format_sources
-from ..retrieval.retriever import Retriever
+from ..retrieval.retriever import DEFAULT_DISTANCE_THRESHOLD, Retriever
 from ..vectorstore.index import VectorIndex
 from ..vectorstore.store import ChunkStore
 
 _INDEX_FILE = "faiss.index"
 _DB_FILE = "chunks.db"
 DEFAULT_K = 5
+NO_RELEVANT_RESULTS_MESSAGE = "I could not find relevant information in the indexed documents."
 
 
 class QueryResult(NamedTuple):
@@ -31,13 +32,18 @@ def query(
     k: int = DEFAULT_K,
     stream: bool = True,
     verbose: bool = True,
+    distance_threshold: float | None = DEFAULT_DISTANCE_THRESHOLD,
 ) -> QueryResult:
     """Answer a question using the pre-built index in index_dir.
 
     Steps:
       1. Load FAISS index and SQLite store from index_dir.
       2. Embed the question with the provided embedder.
-      3. Retrieve the top-k most relevant chunks.
+      3. Retrieve the top-k most relevant chunks, discarding any that fail
+         distance_threshold (see retrieval.retriever for the metric and its
+         comparison direction). If none pass, the chat model is never called:
+         a deterministic "not found" message is printed and returned instead,
+         with an empty sources list.
       4. Build a RAG prompt with source citations.
       5. Call the chat model (streaming by default) and print the answer.
       6. Print a Sources section built directly from the retrieved chunks
@@ -63,9 +69,17 @@ def query(
     store = ChunkStore(db_path)
 
     # ── Retrieve ─────────────────────────────────────────────────────────────
-    retriever = Retriever(embedder=embedder, index=faiss_index, store=store, k=k)
+    retriever = Retriever(
+        embedder=embedder, index=faiss_index, store=store, k=k,
+        distance_threshold=distance_threshold,
+    )
     chunks = retriever.retrieve(question)
     _log(f"[query] Retrieved {len(chunks)} chunk(s) for: {question!r}")
+
+    if not chunks:
+        print(NO_RELEVANT_RESULTS_MESSAGE)
+        store.close()
+        return QueryResult(answer=NO_RELEVANT_RESULTS_MESSAGE, sources=[])
 
     # ── Build prompt ─────────────────────────────────────────────────────────
     prompt = build(chunks, question)

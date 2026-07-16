@@ -71,6 +71,21 @@ class VectorIndex:
         vectors, all stored IDs are returned. FAISS -1 sentinel values
         (padding for under-full results) are filtered out.
         """
+        return [i for i, _ in self.search_with_scores(query_vector, k)]
+
+    def search_with_scores(
+        self, query_vector: list[float], k: int = 5
+    ) -> list[tuple[int, float]]:
+        """Return (id, distance) pairs for the k nearest vectors, closest-first.
+
+        This index is IndexFlatL2: distance is squared Euclidean (L2) distance,
+        where 0 means identical and LOWER values mean MORE similar. This is the
+        opposite direction from a similarity/inner-product score. Callers that
+        threshold on distance must keep results with distance <= threshold, not
+        >=.
+
+        FAISS -1 sentinel IDs (padding for under-full results) are filtered out.
+        """
         if not query_vector:
             raise ValueError("query_vector must be a non-empty list")
         if k <= 0:
@@ -80,9 +95,13 @@ class VectorIndex:
 
         k_actual = min(k, self.size)
         query = np.array([query_vector], dtype=np.float32)
-        _, indices = self._index.search(query, k_actual)
+        distances, indices = self._index.search(query, k_actual)
 
-        return [int(i) for i in indices[0] if i != -1]
+        return [
+            (int(i), float(d))
+            for i, d in zip(indices[0], distances[0])
+            if i != -1
+        ]
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
