@@ -70,7 +70,7 @@ def main() -> None:
 
     embedder = FoundryEmbedder(
         client=runtime.get_embedding_client(),
-        model=runtime.embed_model_id,
+        model=DEFAULT_EMBED_ALIAS,
     )
 
     # ── Stage 2: Index documents ──────────────────────────────────────────────

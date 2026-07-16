@@ -29,7 +29,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     with FoundryRuntime() as runtime:
         embedder = FoundryEmbedder(
             client=runtime.get_embedding_client(),
-            model=runtime.embed_model_id,
+            model=runtime._embed_alias,
         )
         count = index_documents(
             data_dir=args.data_dir,
@@ -52,7 +52,7 @@ def cmd_query(args: argparse.Namespace) -> None:
     with FoundryRuntime() as runtime:
         embedder = FoundryEmbedder(
             client=runtime.get_embedding_client(),
-            model=runtime.embed_model_id,
+            model=runtime._embed_alias,
         )
         print("Answer:")
         query(
