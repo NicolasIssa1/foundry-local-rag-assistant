@@ -8,7 +8,8 @@ Runs the complete RAG pipeline with real embeddings and a real chat model:
   4. Store vectors in FAISS and metadata in SQLite.
   5. Embed the demo question and retrieve the top-k most relevant chunks.
   6. Build a RAG prompt with numbered source citations.
-  7. Stream the answer from qwen2.5-0.5b token by token.
+  7. Stream the answer from the default chat model (DEFAULT_CHAT_ALIAS in
+     src/llm/client.py — currently qwen3-1.7b) token by token.
 
 Run from the project root:
     python scripts/demo_m5.py

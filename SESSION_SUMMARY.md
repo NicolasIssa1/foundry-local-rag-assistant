@@ -1,55 +1,69 @@
-# Session Summary — 2026-07-25 Checkpoint (M6 chat-model upgrade)
+# Session Summary — 2026-07-25 Checkpoint (M6 complete, submission audit)
 
 ## Project status
 
-- **M1–M4** (ingestion, chunking, embeddings interface, vector store,
-  retrieval, prompt builder) — complete.
-- **M5** (Foundry Local SDK integration for embeddings and chat) —
-  complete and validated end-to-end with the real SDK.
-- **M6** (CLI/quality polish) — in progress: source display, relevance
+- **M1–M5** — complete (ingestion, chunking, embeddings, vector store,
+  retrieval, prompt builder, Foundry Local SDK integration).
+- **M6** (CLI/quality polish) — **complete**: source display, relevance
   filtering, chat-model benchmarking/selection, think-block suppression,
-  and index-only loading are complete; remaining M6 items are listed
-  below.
+  index-only loading, CLI usability/error handling, and the evaluation
+  dataset + script are all done.
+- Only the 5-minute presentation/demo recording remains, and that work
+  happens outside this repository.
 
 ## What we completed this session
 
-1. **Chat-model benchmark — committed as `6e9a393`, executed and
-   analyzed this session.**
+1. **Chat-model benchmark — committed as `6e9a393`.**
    Compared baseline `qwen2.5-0.5b` against candidate `qwen3-1.7b` using
    identical retrieval results, prompts, embedding model
    (`qwen3-embedding-0.6b`), and relevance threshold (1.25) for both.
-   `qwen3-1.7b` was more grounded and factually precise on all 3
-   answerable benchmark questions; `qwen2.5-0.5b` fabricated an
-   unsupported "API Key endpoint" and gave an internally contradictory
-   answer on semantic search. `qwen3-1.7b`'s only defect was leaking raw
-   `<think>...</think>` reasoning into output — addressed below.
+   `qwen3-1.7b` was more grounded and factually precise; `qwen2.5-0.5b`
+   fabricated an unsupported "API Key endpoint" and gave an internally
+   contradictory answer on semantic search.
 2. **Think-block suppression — committed as `33c00b2`.**
-   Added `src/llm/think_filter.py` (`ThinkBlockFilter` +
-   `filter_think_stream()`), a small streaming state machine that strips
-   `<think>...</think>` blocks from a live token stream — correctly
-   handling tags split across arbitrary chunk boundaries, multiple
-   blocks, empty blocks, and an incomplete block at end-of-stream
-   (discarded rather than leaked). Wired into
-   `src/pipeline/query.py` for both streamed and non-streamed answers.
-   24 new tests; verified with a real qwen3-1.7b query that no
-   `<think>` content reaches the terminal or the returned answer.
-3. **qwen3-1.7b promoted to default chat model — committed as
-   `4be7208`.**
+   `src/llm/think_filter.py` (`ThinkBlockFilter` + `filter_think_stream()`)
+   strips `<think>...</think>` blocks from a live token stream, correctly
+   handling tags split across arbitrary chunk boundaries. Wired into
+   `src/pipeline/query.py`.
+3. **qwen3-1.7b promoted to default chat model — committed as `4be7208`.**
    `DEFAULT_CHAT_ALIAS` in `src/llm/client.py` changed from
    `qwen2.5-0.5b` to `qwen3-1.7b`. `DEFAULT_EMBED_ALIAS`
-   (`qwen3-embedding-0.6b`) unchanged. Validated with a real
-   `python main.py query "What is retrieval-augmented generation?"` —
-   clean grounded output, Sources section intact, off-topic questions
-   still blocked before any LLM call.
+   (`qwen3-embedding-0.6b`) unchanged.
 4. **Index-only commands no longer load the chat model — committed as
-   `8a30c71`.**
-   `FoundryRuntime.__init__` now accepts `load_chat: bool = True`;
-   `main.py`'s `cmd_index` passes `load_chat=False`, so `python main.py
-   index` only downloads/loads the embedding model. `chat()` /
-   `stream_chat()` raise a clear `RuntimeError` if called without a
-   loaded chat model; `close()` skips unloading a chat model that was
-   never loaded. Query commands are unaffected (still load both models).
-5. **Current test baseline: 289 passed, 1 skipped, 0 failed.**
+   `8a30c71`.** `FoundryRuntime(load_chat=False)` used by `main.py
+   index`; query commands are unaffected.
+5. **Documentation checkpoints — committed as `491377c`, `b2237e4`,
+   `77ce4af`.** `SESSION_SUMMARY.md` and `README.md` brought up to date
+   with the model change, think-block suppression, and lazy loading;
+   README rewritten to match the actual implemented structure (it had
+   drifted from the original M1 scaffold text).
+6. **CLI usability and error handling — committed as `07ffa44`.**
+   `main.py` now fails fast (before loading any model) on a missing
+   `--data-dir` or missing `--index-dir`, rejects an empty question via
+   an argparse-level validator, handles `Ctrl-C` cleanly (exit 130), and
+   has descriptive `--help` text with examples for both subcommands. 9
+   new tests in `tests/test_main.py`.
+7. **Reusable evaluation dataset + script — committed as `b9d66a3`.**
+   `src/evaluation/` (`dataset.py`, `scoring.py`, `runner.py`) plus
+   `src/evaluation/eval_dataset.json` (11 cases: 5 grounded, 3 paraphrased
+   grounded, 3 unrelated/should-be-refused) and `scripts/evaluate_rag.py`,
+   which runs the dataset through the real retriever/threshold/prompt
+   builder/chat model and reports per-case + summary results. 29 new
+   tests in `tests/test_evaluation.py`.
+8. **Final submission audit — this checkpoint.** Verified no secrets,
+   `.env` files, `.venv/`, model caches, or generated index/log files are
+   tracked; removed the "TEMPORARY... not intended to be committed"
+   docstring language from `scripts/benchmark_chat_models.py` (it has
+   real, cited submission value) and fixed a stale `qwen2.5-0.5b`
+   docstring reference in `scripts/demo_m5.py`; brought `README.md`'s
+   test count and Evaluation section up to date and consolidated the
+   quick-start workflow (clone → venv → install → index → query → test →
+   evaluate) into one place.
+9. **Current test baseline: 327 passed, 1 skipped, 0 failed.**
+10. **Latest real evaluation run: 11/11 passed** — 0 type mismatches, 0
+    source mismatches, 0 keyword mismatches; all 3 unrelated questions
+    were blocked before any LLM call. ~40.8s wall-clock for all 11 cases
+    on the development machine (not a portable timing benchmark).
 
 ## Real CLI validation (with the current defaults)
 
@@ -94,16 +108,15 @@ Done. 7 chunk(s) indexed and saved to data/index
 
 ## Current repository state
 
-- Working tree is **clean** and **fully synchronized with `origin/main`**
-  at `491377c`.
+- Working tree is **clean** and **fully synchronized with `origin/main`**;
+  every change described in this checkpoint is included in the commit
+  that carries it (see `git log` for the exact SHA).
 - Environment: Python **3.12.13**, `foundry-local-sdk` **1.2.3**.
 - Default models: embedding `qwen3-embedding-0.6b`, chat `qwen3-1.7b`.
+- No secrets, `.env` files, `.venv/`, model caches, or generated
+  `data/index/` artifacts are tracked in git.
 
-## Remaining work (next session)
+## Remaining work
 
-1. CLI polish and error handling (with tests).
-2. Reusable evaluation dataset and evaluation script; timing
-   measurements.
-3. README and architecture documentation updates for submission.
-4. Final GitHub cleanup.
-5. Five-minute presentation and demo preparation.
+1. Five-minute presentation and demo recording — **outside this
+   repository**; nothing further is planned inside it before submission.

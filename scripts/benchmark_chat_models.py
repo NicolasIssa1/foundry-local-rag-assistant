@@ -1,13 +1,20 @@
 """
-TEMPORARY diagnostic script — chat-model benchmark (M6).
+Chat-model benchmark utility (M6).
 
 Compares chat-model candidates against the existing indexed documents using
 IDENTICAL retrieval results and prompts for every model. The embedding model,
-FAISS index, and relevance threshold are all left unchanged.
+FAISS index, and relevance threshold are all left unchanged, so any
+difference in output is attributable to the chat model alone.
 
-Not part of the application; not intended to be committed or kept long-term.
+This script produced the evidence behind promoting qwen3-1.7b to
+DEFAULT_CHAT_ALIAS (src/llm/client.py) over the original qwen2.5-0.5b
+baseline — see the "Model selection" section of README.md for the
+resulting comparison table. It is a standalone developer utility, not part
+of the application; main.py does not import it. To benchmark a different
+candidate, edit BASELINE_ALIAS / CANDIDATE_ALIASES below.
 
-Run from the project root:
+Run from the project root (requires Foundry Local + both model aliases
+already downloaded, or able to download on demand):
     python scripts/benchmark_chat_models.py
 """
 from __future__ import annotations

@@ -94,9 +94,14 @@ foundry-local-rag-assistant/
 │   ├── retrieval/             # Top-k similarity search + relevance filter (M4, M6)
 │   ├── prompt/                # Prompt templates, builder, source formatting (M4, M6)
 │   ├── llm/                   # FoundryRuntime SDK lifecycle + think-block filter (M5, M6)
-│   └── pipeline/               # index/query orchestration used by main.py (M5)
+│   ├── pipeline/               # index/query orchestration used by main.py (M5)
+│   └── evaluation/            # Eval dataset schema, scoring, runner       (M6)
 │
-├── scripts/                   # Demo and benchmark scripts (not part of the app)
+├── scripts/                   # Demo, benchmark, and evaluation scripts (not part of the app)
+│   ├── demo_m4.py             # Offline pipeline demo (mock embeddings)
+│   ├── demo_m5.py             # Live end-to-end demo with real Foundry Local models
+│   ├── benchmark_chat_models.py  # Reusable qwen2.5-0.5b vs qwen3-1.7b benchmark
+│   └── evaluate_rag.py        # Runs src/evaluation/eval_dataset.json against the real index
 │
 ├── data/                      # Source documents to index
 │   └── index/                 # Generated FAISS index + SQLite store (git-ignored)
@@ -161,6 +166,24 @@ This loads both the embedding model and the chat model
 (`qwen3-1.7b` by default), streams the answer to the terminal with any
 `<think>` reasoning stripped, and prints a `Sources:` section listing the
 documents/pages the answer was grounded in.
+
+### Run the tests
+
+```bash
+pytest
+```
+
+### Run the evaluation
+
+```bash
+# Requires an index built with `python main.py index` first
+python scripts/evaluate_rag.py
+```
+
+Runs the bundled evaluation dataset (`src/evaluation/eval_dataset.json`)
+against the real index using the same retriever, threshold, prompt
+builder, and chat model as the CLI — see [Evaluation](#evaluation) below
+for what it checks and the latest recorded result.
 
 ### CLI reference
 
@@ -275,11 +298,10 @@ invoking the CLI.
 | M3 | Embedding pipeline and FAISS vector store | ✅ Complete |
 | M4 | Retrieval and prompt construction | ✅ Complete |
 | M5 | Foundry Local LLM integration and end-to-end query | ✅ Complete |
-| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading | In progress |
+| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete |
 
-Remaining M6 work: CLI help/error-handling polish, a reusable evaluation
-dataset + script, and final documentation/demo prep — tracked in
-`SESSION_SUMMARY.md`.
+Remaining before final submission: the 5-minute presentation/demo
+recording (outside this repository) — tracked in `SESSION_SUMMARY.md`.
 
 ---
 
@@ -289,10 +311,42 @@ dataset + script, and final documentation/demo prep — tracked in
 pytest
 ```
 
-As of this checkpoint: **289 passed, 1 skipped, 0 failed** — covering
+As of this checkpoint: **327 passed, 1 skipped, 0 failed** — covering
 ingestion, chunking, embeddings, the vector store, retrieval/relevance
 filtering, prompt building, the query pipeline, the think-block filter,
-and `FoundryRuntime`'s lazy chat-model loading.
+`FoundryRuntime`'s lazy chat-model loading, the CLI, and the evaluation
+harness.
+
+---
+
+## Evaluation
+
+Beyond unit tests, `scripts/evaluate_rag.py` runs a reusable dataset of
+end-to-end cases (`src/evaluation/eval_dataset.json`) through the real
+retriever, relevance threshold, prompt builder, and chat model — the same
+code path `main.py query` uses.
+
+| Category | Count |
+|---|---|
+| Grounded (direct questions) | 5 |
+| Grounded (paraphrased questions) | 3 |
+| Unrelated (should be refused) | 3 |
+| **Total** | **11** |
+
+For each case the script checks two **objective, deterministic**
+expectations derived purely from retrieval (never from how the LLM phrases
+its answer): whether the question was correctly grounded vs. refused, and
+whether the expected source document(s) were among the retrieved chunks.
+An optional `expected_keywords` field is also reported per case, but is
+informational only and never fails a case — free-form LLM phrasing can
+vary even for a fully correct answer.
+
+**Latest recorded local run: 11/11 passed** — 0 type mismatches, 0 source
+mismatches, 0 keyword mismatches. All 3 unrelated questions retrieved zero
+chunks and were refused **before any LLM call** (confirmed by the script's
+guard check). Total wall-clock time for all 11 cases: **~40.8 seconds** on
+the machine this was recorded on — actual timing will vary by hardware and
+is not a portable benchmark.
 
 ---
 
@@ -302,12 +356,10 @@ and `FoundryRuntime`'s lazy chat-model loading.
   the ingestion loader (`src/ingestion/loader.py`), even though
   `pymupdf` and `python-docx` are already project dependencies. PDF and
   DOCX support is not yet implemented.
-- **No CLI-level input validation or friendly error messages yet** for
-  cases like an empty `data/` directory, a missing index, or an empty
-  question string — this is tracked as upcoming M6 CLI-polish work.
-- **No automated evaluation harness yet** beyond the ad hoc chat-model
-  benchmark script (`scripts/benchmark_chat_models.py`); a reusable
-  evaluation dataset/script is planned.
+- **Small evaluation corpus.** The evaluation dataset (11 cases) is
+  scoped to the 2 sample documents shipped with this repo; a larger or
+  different document set would need its own dataset with re-verified
+  `expected_sources`.
 - **Single-machine, single-user design.** There is no concurrency
   control around the SQLite chunk store or FAISS index — this is a
   local CLI tool, not a multi-user service.
