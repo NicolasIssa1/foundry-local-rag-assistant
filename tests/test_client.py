@@ -9,13 +9,29 @@ the chat model is skipped when load_chat=False) without touching the SDK.
 """
 from unittest.mock import MagicMock, patch
 
-from src.llm.client import DEFAULT_CHAT_ALIAS, DEFAULT_EMBED_ALIAS, FoundryRuntime
+from foundry_local_sdk.openai.chat_client import ChatClientSettings
+
+from src.llm.client import (
+    DEFAULT_CHAT_ALIAS,
+    DEFAULT_EMBED_ALIAS,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_PRESENCE_PENALTY,
+    FoundryRuntime,
+)
 
 
 def _mock_manager() -> MagicMock:
-    """A MagicMock standing in for FoundryLocalManager.instance."""
+    """A MagicMock standing in for FoundryLocalManager.instance.
+
+    The mocked chat client's .settings is a REAL ChatClientSettings
+    instance (not a further mock) so unset fields correctly default to
+    None, matching production behaviour — needed to test that we do NOT
+    set frequency_penalty.
+    """
     manager = MagicMock()
-    manager.catalog.get_model.return_value = MagicMock()
+    model = MagicMock()
+    model.get_chat_client.return_value.settings = ChatClientSettings()
+    manager.catalog.get_model.return_value = model
     return manager
 
 
@@ -156,4 +172,50 @@ def test_verbose_index_only_load_still_downloads_loads_and_logs(capsys):
     assert "Loading embedding model" in out
     assert f"{DEFAULT_EMBED_ALIAS} ready." in out
 
+    runtime.close()
+
+
+# ── Generation safeguards (Phase 3): max_tokens + presence_penalty applied
+# to the real chat client whenever it's loaded, to prevent uncontrolled or
+# repetitive generation (observed during evaluation: extreme repetition,
+# a leaked closing </think> tag, and fabricated citation numbers repeated
+# verbatim three times). frequency_penalty was tried too but is NOT set —
+# see the comment on DEFAULT_MAX_TOKENS in client.py: it made this backend
+# return zero tokens for every generation, verified empirically. ────────────
+
+def test_chat_client_gets_max_tokens_configured():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=True)
+    assert runtime._chat_client.settings.max_tokens == DEFAULT_MAX_TOKENS
+    runtime.close()
+
+
+def test_chat_client_gets_presence_penalty_configured():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=True)
+    assert runtime._chat_client.settings.presence_penalty == DEFAULT_PRESENCE_PENALTY
+    runtime.close()
+
+
+def test_chat_client_frequency_penalty_is_left_unset():
+    """frequency_penalty must stay untouched (None) — setting it broke
+    generation entirely on the real backend (empty stream every time)."""
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=True)
+    assert runtime._chat_client.settings.frequency_penalty is None
+    runtime.close()
+
+
+def test_max_tokens_is_a_reasonable_positive_limit():
+    """Guards against a future accidental 0/None/unbounded regression."""
+    assert isinstance(DEFAULT_MAX_TOKENS, int)
+    assert 0 < DEFAULT_MAX_TOKENS <= 2000
+
+
+def test_load_chat_false_does_not_touch_chat_settings():
+    """No chat client exists when load_chat=False, so there is nothing to
+    configure — must not raise."""
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=False)
+    assert runtime._chat_client is None
     runtime.close()

@@ -10,6 +10,18 @@ from pathlib import Path
 
 from ..ingestion.models import Chunk
 from .dataset import EvalCase
+from .safety_checks import (
+    contains_visible_think_tags,
+    count_words,
+    find_forbidden_phrases,
+    find_repeated_blocks,
+)
+
+# Default ceiling on answer length. A case may override this via its own
+# max_answer_words field. 150 words comfortably covers a genuine multi-point
+# bulleted answer (observed real answers: ~25-80 words) while still catching
+# runaway/rambling generation.
+DEFAULT_MAX_ANSWER_WORDS = 150
 
 
 @dataclass(frozen=True)
@@ -25,19 +37,43 @@ class EvalResult:
     type_match: bool
     sources_match: bool
     keyword_match: bool | None  # None when the case declared no expected_keywords
+    forbidden_phrase_hits: tuple[str, ...]
+    has_visible_think_tags: bool
+    answer_word_count: int
+    length_ok: bool
+    repeated_blocks: tuple[str, ...]
+    required_keywords_ok: bool
 
     @property
     def passed(self) -> bool:
-        """Objective pass/fail: retrieval type + source membership only.
+        """Objective, deterministic pass/fail — retrieval correctness is
+        necessary but no longer sufficient.
 
-        keyword_match is deliberately excluded — it checks free-form LLM
-        phrasing, which can vary between two equally correct, fully
-        grounded answers. type_match and sources_match are both derived
-        purely from retrieval against the fixed local index, so they are
-        deterministic and reproducible regardless of what the chat model
-        says.
+        Required (hard gates, all derived from plain string checks, never
+        LLM judging):
+          - type_match / sources_match: retrieval found (or correctly
+            didn't find) the right source documents.
+          - no forbidden_phrase_hits: the answer doesn't contradict this
+            project's actual implementation (e.g. claiming "cosine
+            similarity" when retrieval actually uses FAISS/squared L2).
+          - no visible think tags: no leaked <think>/</think> content.
+          - length_ok: the answer didn't ramble past the length ceiling.
+          - no repeated_blocks: no degenerate repetition loop.
+          - required_keywords_ok: exact implementation facts that matter
+            (e.g. "FAISS") were actually stated, when the case requires it.
+
+        keyword_match (the older, informational expected_keywords field)
+        is deliberately EXCLUDED — see its docstring below.
         """
-        return self.type_match and self.sources_match
+        return (
+            self.type_match
+            and self.sources_match
+            and not self.forbidden_phrase_hits
+            and not self.has_visible_think_tags
+            and self.length_ok
+            and not self.repeated_blocks
+            and self.required_keywords_ok
+        )
 
 
 def _actual_sources(chunks: list[Chunk]) -> tuple[str, ...]:
@@ -74,6 +110,18 @@ def score_case(
         lowered = answer.lower()
         keyword_match = all(kw.lower() in lowered for kw in case.expected_keywords)
 
+    forbidden_phrase_hits = find_forbidden_phrases(answer, case.forbidden_phrases)
+    has_visible_think_tags = contains_visible_think_tags(answer)
+    answer_word_count = count_words(answer)
+    max_words = case.max_answer_words or DEFAULT_MAX_ANSWER_WORDS
+    length_ok = answer_word_count <= max_words
+    repeated_blocks = find_repeated_blocks(answer)
+
+    required_keywords_ok = True
+    if case.required_keywords:
+        lowered = answer.lower()
+        required_keywords_ok = all(kw.lower() in lowered for kw in case.required_keywords)
+
     total_time = retrieval_time + (generation_time or 0.0)
 
     return EvalResult(
@@ -88,6 +136,12 @@ def score_case(
         type_match=type_match,
         sources_match=sources_match,
         keyword_match=keyword_match,
+        forbidden_phrase_hits=forbidden_phrase_hits,
+        has_visible_think_tags=has_visible_think_tags,
+        answer_word_count=answer_word_count,
+        length_ok=length_ok,
+        repeated_blocks=repeated_blocks,
+        required_keywords_ok=required_keywords_ok,
     )
 
 
@@ -100,4 +154,9 @@ def summarize(results: list[EvalResult]) -> dict:
         "type_mismatches": sum(1 for r in results if not r.type_match),
         "source_mismatches": sum(1 for r in results if not r.sources_match),
         "keyword_mismatches": sum(1 for r in results if r.keyword_match is False),
+        "forbidden_phrase_failures": sum(1 for r in results if r.forbidden_phrase_hits),
+        "repetition_failures": sum(1 for r in results if r.repeated_blocks),
+        "visible_think_tag_failures": sum(1 for r in results if r.has_visible_think_tags),
+        "length_failures": sum(1 for r in results if not r.length_ok),
+        "required_keyword_failures": sum(1 for r in results if not r.required_keywords_ok),
     }

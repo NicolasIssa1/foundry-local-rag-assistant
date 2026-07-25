@@ -42,8 +42,11 @@ Chunking
 
 Vector Search
    Vector search (also called semantic search or approximate nearest-neighbour search)
-   finds the chunks whose embeddings are most similar to the query embedding. The most
-   common similarity measure is cosine similarity.
+   finds the chunks whose embeddings are most similar to the query embedding. This
+   project's vector index uses FAISS IndexFlatL2, which measures squared Euclidean
+   (L2) distance between embeddings rather than cosine similarity — a lower distance
+   means a closer match, and only chunks below a configured distance threshold are
+   kept as relevant.
 
 Why Local RAG?
 

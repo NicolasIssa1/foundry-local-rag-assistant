@@ -7,6 +7,48 @@ from foundry_local_sdk import Configuration, FoundryLocalManager
 DEFAULT_EMBED_ALIAS = "qwen3-embedding-0.6b"
 DEFAULT_CHAT_ALIAS = "qwen3-1.7b"
 
+# Generation safeguard against uncontrolled output (observed once during
+# evaluation: extreme repetition and a leaked closing </think> tag). Caps
+# the maximum tokens per generation via the SDK's OpenAI-compatible
+# ChatClientSettings.max_tokens field.
+#
+# 1024 (not a tighter value like 512): Qwen3's <think>...</think> reasoning
+# block is generated before the visible answer and itself consumes several
+# hundred tokens on typical questions. A cap that lands mid-<think> truncates
+# the stream before </think> ever appears, and ThinkBlockFilter correctly
+# discards everything from an unterminated think block — the whole visible
+# answer would silently disappear (verified empirically: 512 reproduced this
+# exact empty-answer failure on a real query). 1024 comfortably covers
+# reasoning + a concise answer while still bounding true runaway repetition.
+#
+# frequency_penalty was tried as a second anti-repetition safeguard but is
+# NOT used: setting ChatClientSettings.frequency_penalty to any non-None
+# value on this backend (qwen3-1.7b via the local ONNX Runtime GenAI
+# execution provider) made every generation return zero tokens — verified
+# empirically by isolating it from max_tokens in a real query (a run with
+# only max_tokens set behaved normally; the same run adding
+# frequency_penalty=0.4 produced an empty stream every time).
+#
+# presence_penalty was tried next and DOES work on this backend (verified
+# empirically: normal-length, non-empty, non-repetitive output with
+# presence_penalty=0.6 on a real query that previously repeated the same
+# sentence three times with fabricated citation numbers). It is used here
+# alongside the prompt-level anti-repetition instruction in SYSTEM_PROMPT.
+#
+# 0.6 was later raised to 1.0 after a second real evaluation run showed
+# 0.6 still isn't a hard guarantee: one generation produced a 760-word,
+# 15-times-repeated answer even with 0.6 set. A stress test comparing 1.0
+# against the same two prompts (2 trials each) showed meaningfully shorter,
+# far-less-repetitive output (worst case dropped to ~198 words with a
+# couple of repeated fragments, vs. 760 words/15 repeats at 0.6). This
+# still isn't a 100% guarantee — a 1.7B local model's occasional
+# repetition can't be fully eliminated via the sampling parameters this
+# SDK exposes — which is exactly why the evaluation's repeated_blocks
+# check (src/evaluation/safety_checks.py) exists as an independent,
+# objective backstop rather than relying on generation settings alone.
+DEFAULT_MAX_TOKENS = 1024
+DEFAULT_PRESENCE_PENALTY = 1.0
+
 
 class FoundryRuntime:
     """Manages the Foundry Local SDK lifecycle for embedding and chat models.
@@ -47,6 +89,8 @@ class FoundryRuntime:
         if load_chat:
             self._chat_model = self._load_model(chat_alias, kind="chat")
             self._chat_client = self._chat_model.get_chat_client()
+            self._chat_client.settings.max_tokens = DEFAULT_MAX_TOKENS
+            self._chat_client.settings.presence_penalty = DEFAULT_PRESENCE_PENALTY
 
     # ── Internal setup helpers ────────────────────────────────────────────────
 

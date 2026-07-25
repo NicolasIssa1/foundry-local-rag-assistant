@@ -33,6 +33,29 @@ def test_build_includes_system_prompt():
     assert SYSTEM_PROMPT in result
 
 
+# ── System prompt content — generation-safety instructions (Phase 3) ────────────
+
+def test_system_prompt_instructs_context_only():
+    lowered = SYSTEM_PROMPT.lower()
+    assert "only" in lowered
+    assert "context" in lowered
+
+
+def test_system_prompt_forbids_inventing_implementation_details():
+    lowered = SYSTEM_PROMPT.lower()
+    assert "not add facts" in lowered or "do not invent" in lowered or "not add" in lowered
+    assert "implementation" in lowered
+
+
+def test_system_prompt_instructs_conciseness():
+    assert "concise" in SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_forbids_repetition():
+    lowered = SYSTEM_PROMPT.lower()
+    assert "repeat" in lowered
+
+
 # ── Question ──────────────────────────────────────────────────────────────────
 
 def test_build_includes_the_question():

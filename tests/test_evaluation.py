@@ -325,6 +325,11 @@ def test_summarize_counts_are_deterministic():
         "type_mismatches": 1,
         "source_mismatches": 0,
         "keyword_mismatches": 0,
+        "forbidden_phrase_failures": 0,
+        "repetition_failures": 0,
+        "visible_think_tag_failures": 0,
+        "length_failures": 0,
+        "required_keyword_failures": 0,
     }
 
 
@@ -336,4 +341,194 @@ def test_summarize_empty_list_is_all_zero():
         "type_mismatches": 0,
         "source_mismatches": 0,
         "keyword_mismatches": 0,
+        "forbidden_phrase_failures": 0,
+        "repetition_failures": 0,
+        "visible_think_tag_failures": 0,
+        "length_failures": 0,
+        "required_keyword_failures": 0,
     }
+
+
+# ── Phase 4: objective safety checks (src/evaluation/safety_checks.py) ────────
+
+from src.evaluation.safety_checks import (
+    contains_visible_think_tags,
+    count_words,
+    find_forbidden_phrases,
+    find_repeated_blocks,
+)
+
+
+def test_find_forbidden_phrases_detects_case_insensitive_match():
+    hits = find_forbidden_phrases("This uses Cosine Similarity here.", ("cosine similarity",))
+    assert hits == ("cosine similarity",)
+
+
+def test_find_forbidden_phrases_none_declared_returns_empty():
+    assert find_forbidden_phrases("anything at all", ()) == ()
+
+
+def test_find_forbidden_phrases_absent_phrase_returns_empty():
+    assert find_forbidden_phrases("This uses FAISS.", ("cosine similarity",)) == ()
+
+
+def test_contains_visible_think_tags_true_for_open_tag():
+    assert contains_visible_think_tags("some <think> leaked") is True
+
+
+def test_contains_visible_think_tags_true_for_close_tag():
+    assert contains_visible_think_tags("leaked </think> content") is True
+
+
+def test_contains_visible_think_tags_false_for_clean_answer():
+    assert contains_visible_think_tags("A perfectly normal answer.") is False
+
+
+def test_count_words_basic():
+    assert count_words("one two three") == 3
+
+
+def test_find_repeated_blocks_detects_repeated_sentence():
+    text = "This is a fairly long sentence about RAG. " * 2
+    repeated = find_repeated_blocks(text)
+    assert len(repeated) >= 1
+
+
+def test_find_repeated_blocks_no_repeats_returns_empty():
+    text = "This is one sentence about RAG. This is a different sentence about FAISS."
+    assert find_repeated_blocks(text) == ()
+
+
+def test_find_repeated_blocks_ignores_short_fragments():
+    """Short repeated fragments (below min_words) must not trigger a false positive."""
+    text = "OK. OK. OK."
+    assert find_repeated_blocks(text) == ()
+
+
+def test_find_repeated_blocks_detects_repeated_paragraph():
+    para = "The RAG pipeline is a two-phase process that retrieves and augments."
+    text = f"[17] (source: sample.txt, page 1)\n{para}\n\n[18] (source: sample.txt, page 1)\n{para}"
+    repeated = find_repeated_blocks(text)
+    assert len(repeated) >= 1
+
+
+# ── Phase 4: forbidden phrases / required keywords / length / repetition
+# gate score_case().passed — none of these are LLM judging, all plain
+# deterministic string checks. ────────────────────────────────────────────────
+
+def test_forbidden_phrase_present_fails_the_case():
+    case = _case(
+        expected_sources=("report.txt",),
+        forbidden_phrases=("cosine similarity",),
+    )
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "It uses cosine similarity.", 0.1, 1.0)
+    assert result.forbidden_phrase_hits == ("cosine similarity",)
+    assert result.passed is False
+
+
+def test_forbidden_phrase_absent_passes_that_gate():
+    case = _case(
+        expected_sources=("report.txt",),
+        forbidden_phrases=("cosine similarity",),
+    )
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "It uses FAISS with squared L2 distance.", 0.1, 1.0)
+    assert result.forbidden_phrase_hits == ()
+    assert result.passed is True
+
+
+def test_visible_think_tag_in_answer_fails_the_case():
+    case = _case(expected_sources=("report.txt",))
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "Answer with <think>leak</think> inside.", 0.1, 1.0)
+    assert result.has_visible_think_tags is True
+    assert result.passed is False
+
+
+def test_excessive_length_fails_the_case():
+    case = _case(expected_sources=("report.txt",), max_answer_words=10)
+    chunks = [_chunk("a", "/data/report.txt")]
+    long_answer = " ".join(f"word{i}" for i in range(20))
+    result = score_case(case, chunks, long_answer, 0.1, 1.0)
+    assert result.length_ok is False
+    assert result.passed is False
+
+
+def test_length_within_default_ceiling_passes():
+    case = _case(expected_sources=("report.txt",))
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "A short, normal answer.", 0.1, 1.0)
+    assert result.length_ok is True
+
+
+def test_repeated_content_fails_the_case():
+    case = _case(expected_sources=("report.txt",))
+    chunks = [_chunk("a", "/data/report.txt")]
+    repeated_answer = "This is a fairly long sentence about RAG systems. " * 3
+    result = score_case(case, chunks, repeated_answer, 0.1, 1.0)
+    assert len(result.repeated_blocks) > 0
+    assert result.passed is False
+
+
+def test_required_keyword_missing_fails_the_case():
+    case = _case(expected_sources=("report.txt",), required_keywords=("FAISS",))
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "No implementation detail mentioned here.", 0.1, 1.0)
+    assert result.required_keywords_ok is False
+    assert result.passed is False
+
+
+def test_required_keyword_present_passes_that_gate():
+    case = _case(expected_sources=("report.txt",), required_keywords=("FAISS",))
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "This project uses FAISS for vector search.", 0.1, 1.0)
+    assert result.required_keywords_ok is True
+    assert result.passed is True
+
+
+def test_no_required_keywords_declared_is_vacuously_ok():
+    case = _case(expected_sources=("report.txt",), required_keywords=())
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(case, chunks, "Anything at all.", 0.1, 1.0)
+    assert result.required_keywords_ok is True
+
+
+def test_a_fully_correct_answer_passes_every_gate():
+    """A clean, grounded, on-topic, correctly-sourced answer with a
+    required fact present and no forbidden phrase must pass overall."""
+    case = _case(
+        expected_type="grounded",
+        expected_sources=("report.txt",),
+        required_keywords=("FAISS",),
+        forbidden_phrases=("cosine similarity",),
+    )
+    chunks = [_chunk("a", "/data/report.txt")]
+    result = score_case(
+        case, chunks, "This project uses FAISS with squared L2 distance.", 0.1, 1.0
+    )
+    assert result.passed is True
+
+
+def test_dataset_schema_rejects_invalid_max_answer_words(tmp_path):
+    path = tmp_path / "dataset.json"
+    path.write_text(json.dumps([{
+        "id": "a", "question": "Q?", "category": "grounded",
+        "expected_type": "grounded", "expected_sources": ["doc.txt"],
+        "max_answer_words": -5,
+    }]), encoding="utf-8")
+    with pytest.raises(InvalidEvalCaseError):
+        load_dataset(path)
+
+
+def test_dataset_schema_parses_forbidden_phrases_and_required_keywords(tmp_path):
+    path = tmp_path / "dataset.json"
+    path.write_text(json.dumps([{
+        "id": "a", "question": "Q?", "category": "grounded",
+        "expected_type": "grounded", "expected_sources": ["doc.txt"],
+        "required_keywords": ["FAISS"],
+        "forbidden_phrases": ["cosine similarity"],
+    }]), encoding="utf-8")
+    cases = load_dataset(path)
+    assert cases[0].required_keywords == ("FAISS",)
+    assert cases[0].forbidden_phrases == ("cosine similarity",)

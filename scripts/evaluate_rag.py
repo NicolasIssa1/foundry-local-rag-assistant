@@ -71,6 +71,12 @@ def main() -> int:
         print(f"  sources_match:      {r.sources_match}")
         if r.keyword_match is not None:
             print(f"  keyword_match:      {r.keyword_match}  (informational, not a pass/fail gate)")
+        if r.case.required_keywords:
+            print(f"  required_keywords_ok: {r.required_keywords_ok}  (required: {list(r.case.required_keywords)})")
+        print(f"  forbidden_phrase_hits: {list(r.forbidden_phrase_hits)}")
+        print(f"  has_visible_think_tags: {r.has_visible_think_tags}")
+        print(f"  answer_word_count:  {r.answer_word_count}  (length_ok={r.length_ok})")
+        print(f"  repeated_blocks:    {len(r.repeated_blocks)} found")
         print(f"  retrieval_time:     {r.retrieval_time:.3f}s")
         print(
             "  generation_time:    "
@@ -92,10 +98,15 @@ def main() -> int:
     print(f"  total:              {summary['total']}")
     print(f"  passed:             {summary['passed']}")
     print(f"  failed:             {summary['failed']}")
-    print(f"  type_mismatches:    {summary['type_mismatches']}")
-    print(f"  source_mismatches:  {summary['source_mismatches']}")
-    print(f"  keyword_mismatches: {summary['keyword_mismatches']} (informational only)")
-    print(f"  wall_clock_time:    {wall_clock_time:.3f}s")
+    print(f"  type_mismatches:            {summary['type_mismatches']}")
+    print(f"  source_mismatches:          {summary['source_mismatches']}")
+    print(f"  keyword_mismatches:         {summary['keyword_mismatches']} (informational only)")
+    print(f"  required_keyword_failures:  {summary['required_keyword_failures']}")
+    print(f"  forbidden_phrase_failures:  {summary['forbidden_phrase_failures']}")
+    print(f"  repetition_failures:        {summary['repetition_failures']}")
+    print(f"  visible_think_tag_failures: {summary['visible_think_tag_failures']}")
+    print(f"  length_failures:            {summary['length_failures']}")
+    print(f"  wall_clock_time:            {wall_clock_time:.3f}s")
 
     return 1 if summary["failed"] > 0 else 0
 

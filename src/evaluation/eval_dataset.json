@@ -13,7 +13,8 @@
     "category": "grounded",
     "expected_type": "grounded",
     "expected_sources": ["sample.txt"],
-    "expected_keywords": ["embedding"]
+    "expected_keywords": ["embedding", "FAISS"],
+    "forbidden_phrases": ["cosine similarity"]
   },
   {
     "id": "foundry-local-serving",
@@ -37,7 +38,8 @@
     "category": "grounded",
     "expected_type": "grounded",
     "expected_sources": ["sample.md"],
-    "expected_keywords": ["5272"]
+    "expected_keywords": ["5272"],
+    "required_keywords": ["5272"]
   },
   {
     "id": "rag-definition-paraphrase",
@@ -53,7 +55,8 @@
     "category": "grounded_paraphrase",
     "expected_type": "grounded",
     "expected_sources": ["sample.txt"],
-    "expected_keywords": []
+    "expected_keywords": [],
+    "forbidden_phrases": ["cosine similarity"]
   },
   {
     "id": "foundry-local-endpoints-paraphrase",

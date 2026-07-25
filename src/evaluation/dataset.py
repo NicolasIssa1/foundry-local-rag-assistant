@@ -2,10 +2,21 @@
 
 The dataset itself (src/evaluation/eval_dataset.json) is a plain,
 human-readable JSON array of cases. Each case declares a question and the
-objectively-checkable behaviour the pipeline is expected to produce for it
-(grounded vs. refused, and — for grounded cases — which source document(s)
-should appear among the retrieved chunks). expected_keywords is optional
-and purely informational; see scoring.EvalResult.passed for why.
+objectively-checkable behaviour the pipeline is expected to produce for it:
+
+- grounded vs. refused, and — for grounded cases — which source
+  document(s) should appear among the retrieved chunks.
+- expected_keywords: optional, purely informational (see
+  scoring.EvalResult.passed for why it never fails a case on its own).
+- required_keywords: optional, a HARD gate — used for cases where an
+  exact implementation fact matters (e.g. "FAISS" must appear when asking
+  how vector search works in this project).
+- forbidden_phrases: optional, a HARD gate — phrases that must NOT appear
+  because they'd contradict this project's actual implementation (e.g.
+  "cosine similarity", since retrieval here uses FAISS IndexFlatL2/squared
+  L2 distance).
+- max_answer_words: optional per-case override of the evaluation's
+  default answer-length ceiling.
 """
 from __future__ import annotations
 
@@ -33,6 +44,9 @@ class EvalCase:
     expected_type: str
     expected_sources: tuple[str, ...]
     expected_keywords: tuple[str, ...]
+    required_keywords: tuple[str, ...] = ()
+    forbidden_phrases: tuple[str, ...] = ()
+    max_answer_words: int | None = None
 
 
 def _parse_case(raw: dict) -> EvalCase:
@@ -62,6 +76,9 @@ def _parse_case(raw: dict) -> EvalCase:
 
     expected_sources = tuple(raw.get("expected_sources", []))
     expected_keywords = tuple(raw.get("expected_keywords", []))
+    required_keywords = tuple(raw.get("required_keywords", []))
+    forbidden_phrases = tuple(raw.get("forbidden_phrases", []))
+    max_answer_words = raw.get("max_answer_words")
 
     if raw["expected_type"] == "refused" and expected_sources:
         raise InvalidEvalCaseError(
@@ -73,6 +90,13 @@ def _parse_case(raw: dict) -> EvalCase:
             f"Eval case {case_id!r} is expected_type='grounded' but declares "
             f"no expected_sources"
         )
+    if max_answer_words is not None and (
+        not isinstance(max_answer_words, int) or max_answer_words <= 0
+    ):
+        raise InvalidEvalCaseError(
+            f"Eval case {case_id!r} has invalid max_answer_words={max_answer_words!r}; "
+            f"must be a positive integer"
+        )
 
     return EvalCase(
         id=case_id,
@@ -81,6 +105,9 @@ def _parse_case(raw: dict) -> EvalCase:
         expected_type=raw["expected_type"],
         expected_sources=expected_sources,
         expected_keywords=expected_keywords,
+        required_keywords=required_keywords,
+        forbidden_phrases=forbidden_phrases,
+        max_answer_words=max_answer_words,
     )
 
 
