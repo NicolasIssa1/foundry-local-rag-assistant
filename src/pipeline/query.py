@@ -6,6 +6,7 @@ from typing import Callable, Iterator, NamedTuple
 from ..embeddings.foundry_embedder import FoundryEmbedder
 from ..ingestion.models import Chunk
 from ..llm.client import FoundryRuntime
+from ..llm.think_filter import filter_think_stream
 from ..prompt.builder import build, format_sources
 from ..retrieval.retriever import DEFAULT_DISTANCE_THRESHOLD, Retriever
 from ..vectorstore.index import VectorIndex
@@ -46,6 +47,9 @@ def query(
          with an empty sources list.
       4. Build a RAG prompt with source citations.
       5. Call the chat model (streaming by default) and print the answer.
+         Any <think>...</think> reasoning block (e.g. from Qwen3) is
+         suppressed live via filter_think_stream before it reaches the
+         terminal or the returned answer.
       6. Print a Sources section built directly from the retrieved chunks
          (never from the model's own output).
 
@@ -89,13 +93,13 @@ def query(
     answer_parts: list[str] = []
 
     if stream:
-        for token in runtime.stream_chat(messages):
+        for token in filter_think_stream(runtime.stream_chat(messages)):
             print(token, end="", flush=True)
             answer_parts.append(token)
         print()
     else:
         answer = runtime.chat(messages)
-        answer_parts.append(answer)
+        answer_parts.append("".join(filter_think_stream([answer])))
 
     # ── Sources ──────────────────────────────────────────────────────────────
     # Always shown, regardless of verbose — built from the retrieved chunks

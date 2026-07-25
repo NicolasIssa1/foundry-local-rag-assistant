@@ -312,6 +312,81 @@ def test_query_default_threshold_rejects_orthogonal_match_without_explicit_arg(t
     assert result.answer == NO_RELEVANT_RESULTS_MESSAGE
 
 
+# ── Think-block suppression (Qwen3-style reasoning) — integrated into query() ────
+
+def test_query_strips_think_block_from_streamed_answer(tmp_path, capsys):
+    """A Qwen3-style <think> block split across multiple stream chunks must
+    never reach stdout or the returned answer, even inside the real query()
+    streaming loop (not just the filter's own unit tests)."""
+    chunks = [_chunk("RAG text.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0])
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter([
+        "<think>", "internal reasoning ", "should not appear</think>", "Visible answer.",
+    ])
+    result = query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        verbose=False,
+    )
+    captured = capsys.readouterr()
+    assert result.answer == "Visible answer."
+    assert "internal reasoning" not in captured.out
+    assert "<think>" not in captured.out
+    assert "</think>" not in captured.out
+    assert "Visible answer." in captured.out
+
+
+def test_query_non_stream_mode_also_strips_think_block(tmp_path):
+    chunks = [_chunk("RAG text.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0])
+    runtime = MagicMock()
+    runtime.chat.return_value = "<think>reasoning</think>Visible answer."
+    result = query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        stream=False, verbose=False,
+    )
+    assert result.answer == "Visible answer."
+
+
+def test_query_sources_still_shown_when_answer_has_think_block(tmp_path, capsys):
+    """Source display must be unaffected by think-block filtering — sources
+    come from retrieved chunks, never from the model's streamed output."""
+    chunks = [_chunk("RAG text.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0])
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter(["<think>reasoning</think>", "Answer."])
+    query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        verbose=False,
+    )
+    captured = capsys.readouterr()
+    assert "Sources:" in captured.out
+    assert "report.txt" in captured.out
+
+
+def test_query_zero_retrieval_behaviour_unaffected_by_think_filter(tmp_path, capsys):
+    """Relevance filtering must still short-circuit before any chat call —
+    think-block suppression must not change this path at all."""
+    chunks = [_chunk("Unrelated content.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V1])
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter(["<think>reasoning</think>", "should not be used"])
+    result = query(
+        question="totally unrelated question", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        distance_threshold=0.1, verbose=False,
+    )
+    captured = capsys.readouterr()
+    assert result.answer == NO_RELEVANT_RESULTS_MESSAGE
+    assert result.sources == []
+    assert "Sources:" not in captured.out
+    runtime.chat.assert_not_called()
+    runtime.stream_chat.assert_not_called()
+
+
 def test_query_normal_relevant_flow_unaffected_by_default_threshold(tmp_path, capsys):
     """An exact (distance 0) match must sail through the default threshold and
     produce a normal answer + Sources section, unchanged from before filtering."""
