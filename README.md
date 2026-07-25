@@ -40,6 +40,11 @@ Key behaviors, beyond a basic "embed, search, generate" loop:
   boundaries — so only the final answer ever reaches the terminal.
 - **Lazy chat-model loading.** `main.py index` only downloads/loads the
   embedding model; the chat model is loaded only for `main.py query`.
+- **Stable indexing.** A native segmentation fault that could occur
+  during `main.py index` (a ctypes/libffi callback marshaling issue in
+  the Foundry Local SDK's native layer) and a chunk-store/FAISS ID
+  desync bug that could serve stale chunk text after re-indexing have
+  both been fixed and verified — see `SESSION_SUMMARY.md` for details.
 
 ---
 
@@ -298,10 +303,15 @@ invoking the CLI.
 | M3 | Embedding pipeline and FAISS vector store | ✅ Complete |
 | M4 | Retrieval and prompt construction | ✅ Complete |
 | M5 | Foundry Local LLM integration and end-to-end query | ✅ Complete |
-| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete |
+| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete, with one known open item below |
 
-Remaining before final submission: the 5-minute presentation/demo
-recording (outside this repository) — tracked in `SESSION_SUMMARY.md`.
+**Not yet finally submission-ready.** A known evaluation issue remains:
+the latest personally verified evaluation run is **9/11**, with 2
+answers exceeding the 150-word length limit (see
+[Evaluation](#evaluation)). Deterministic concise output is the next
+priority, tracked in `SESSION_SUMMARY.md`. The 5-minute
+presentation/demo recording (outside this repository) is also still
+remaining.
 
 ---
 
@@ -311,7 +321,7 @@ recording (outside this repository) — tracked in `SESSION_SUMMARY.md`.
 pytest
 ```
 
-As of this checkpoint: **327 passed, 1 skipped, 0 failed** — covering
+As of this checkpoint: **371 passed, 1 skipped, 0 failed** — covering
 ingestion, chunking, embeddings, the vector store, retrieval/relevance
 filtering, prompt building, the query pipeline, the think-block filter,
 `FoundryRuntime`'s lazy chat-model loading, the CLI, and the evaluation
@@ -333,25 +343,49 @@ code path `main.py query` uses.
 | Unrelated (should be refused) | 3 |
 | **Total** | **11** |
 
-For each case the script checks two **objective, deterministic**
-expectations derived purely from retrieval (never from how the LLM phrases
-its answer): whether the question was correctly grounded vs. refused, and
-whether the expected source document(s) were among the retrieved chunks.
+For each case the script checks several **objective, deterministic**
+gates — none of them LLM judging:
+
+- Whether the question was correctly grounded vs. refused, and whether
+  the expected source document(s) were among the retrieved chunks.
+- **Forbidden phrases** — an answer must not contradict this project's
+  actual implementation (e.g. claiming "cosine similarity" when
+  retrieval actually uses FAISS `IndexFlatL2`/squared L2 distance).
+- **Required keywords** — for cases where an exact implementation fact
+  matters, that fact must actually appear in the answer.
+- **Visible `<think>` tags** — an independent re-check that no raw
+  reasoning leaked into the final answer.
+- **Answer length** — a per-case or default word-count ceiling (150
+  words by default).
+- **Repeated blocks** — detects degenerate repetition loops, including
+  the pattern where each repeat is prefixed with a different fabricated
+  citation number.
+
 An optional `expected_keywords` field is also reported per case, but is
-informational only and never fails a case — free-form LLM phrasing can
+purely informational and never fails a case — free-form LLM phrasing can
 vary even for a fully correct answer.
 
-**Latest recorded local run: 11/11 passed** — 0 type mismatches, 0 source
-mismatches, 0 keyword mismatches. All 3 unrelated questions retrieved zero
-chunks and were refused **before any LLM call** (confirmed by the script's
-guard check). Total wall-clock time for all 11 cases: **~40.8 seconds** on
-the machine this was recorded on — actual timing will vary by hardware and
-is not a portable benchmark.
+**Latest personally verified local run: 9/11 passed.** The 2 failures
+were both **length-only** — `rag-definition` (179 words) and
+`rag-definition-paraphrase` (154 words) each exceeded the 150-word
+limit; neither involved repetition, a forbidden phrase, or a visible
+think-tag leak. Across that run: 0 type mismatches, 0 source mismatches,
+0 forbidden-phrase failures, 0 repetition failures, 0 visible-think-tag
+failures. **Deterministic concise output is the next open item** — see
+[Limitations and future improvements](#limitations-and-future-improvements)
+and `SESSION_SUMMARY.md`.
 
 ---
 
 ## Limitations and future improvements
 
+- **Concise output is not yet consistent (next priority).** The
+  strengthened evaluation enforces a 150-word answer limit; the latest
+  personally verified run passed 9/11, with 2 answers exceeding that
+  limit (179 and 154 words). No repetition, forbidden phrases, or
+  think-tag leaks were involved — this is purely a length-consistency
+  issue. Fixing this without weakening the 150-word evaluation limit is
+  the next session's priority (see `SESSION_SUMMARY.md`).
 - **Document formats.** Only `.txt` and `.md` are currently wired into
   the ingestion loader (`src/ingestion/loader.py`), even though
   `pymupdf` and `python-docx` are already project dependencies. PDF and

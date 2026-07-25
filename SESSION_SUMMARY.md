@@ -4,12 +4,17 @@
 
 - **M1–M5** — complete (ingestion, chunking, embeddings, vector store,
   retrieval, prompt builder, Foundry Local SDK integration).
-- **M6** (CLI/quality polish) — **complete**: source display, relevance
-  filtering, chat-model benchmarking/selection, think-block suppression,
-  index-only loading, CLI usability/error handling, and the evaluation
-  dataset + script are all done.
-- Only the 5-minute presentation/demo recording remains, and that work
-  happens outside this repository.
+- **M6** (CLI/quality polish) — source display, relevance filtering,
+  chat-model benchmarking/selection, think-block suppression, index-only
+  loading, CLI usability/error handling, and the evaluation dataset +
+  script are all done. A native indexing crash and a chunk-store/FAISS
+  ID desync bug were found and fixed in a later repair session (see
+  below).
+- **Known open issue:** the strengthened evaluation's personally
+  verified result is **9/11** — two answers exceed the 150-word length
+  limit. The project is **not** considered finally submission-ready
+  until this is resolved; see "Manual QA checkpoint" below and
+  "Remaining work" at the end of this file.
 
 ## What we completed this session
 
@@ -65,6 +70,45 @@
     were blocked before any LLM call. ~40.8s wall-clock for all 11 cases
     on the development machine (not a portable timing benchmark).
 
+## Manual QA checkpoint — 2026-07-25 (later same day)
+
+A repair session fixed a native segmentation fault and a chunk-store ID
+desync bug (see `git log` — commits `0600c8a` and `1c17d0c`), added
+generation safeguards, and strengthened the evaluation with objective
+length/repetition/forbidden-phrase/think-tag/required-keyword checks.
+After that session, the following was personally verified by hand:
+
+- **Full test suite: 371 passed, 1 skipped, 0 failed.**
+- **Fresh indexing succeeded twice consecutively** (`python main.py
+  index`, run back-to-back) — the previously observed segmentation
+  fault is **confirmed fixed**. Both runs produced **7 chunks**.
+- A grounded query (`python main.py query "What is
+  retrieval-augmented generation?"`) worked correctly and displayed
+  both `sample.txt` and `sample.md` as sources.
+- A vector-search query correctly described **FAISS IndexFlatL2** and
+  **L2 distance** — the previously observed false "cosine similarity"
+  claim did not occur in this manual check.
+- The unrelated "What is the weather in Beirut today?" question was
+  refused, with **0 retrieved chunks** — the chat model was not called.
+- **No visible `<think>` tags** occurred in any manual check.
+- The repository remained **clean** throughout.
+- The strengthened evaluation (`python scripts/evaluate_rag.py`)
+  correctly detected **two remaining answer-length failures**:
+  - **Current personal evaluation result: 9/11 passed.**
+  - Both failures were **length-only** (no repetition, no forbidden
+    phrases, no think-tag leaks):
+    - `rag-definition`: **179 words** (limit: 150)
+    - `rag-definition-paraphrase`: **154 words** (limit: 150)
+  - **0 type mismatches, 0 source mismatches, 0 forbidden-phrase
+    failures, 0 repetition failures, 0 visible-think-tag failures.**
+
+**Next session priority:** deterministic concise streamed output —
+without weakening the 150-word evaluation limit. The mechanical bugs
+(crash, ID desync, uncontrolled repetition, false-claim root cause) are
+fixed; the model still occasionally exceeds the length target on some
+questions, and that's the remaining open item before this project can
+be called finally submission-ready.
+
 ## Real CLI validation (with the current defaults)
 
 `python main.py query "What is retrieval-augmented generation?"` — grounded,
@@ -108,9 +152,10 @@ Done. 7 chunk(s) indexed and saved to data/index
 
 ## Current repository state
 
-- Working tree is **clean** and **fully synchronized with `origin/main`**;
-  every change described in this checkpoint is included in the commit
-  that carries it (see `git log` for the exact SHA).
+- Working tree is **clean** and **fully synchronized with `origin/main`**
+  as of commit `1c17d0c` (`fix(llm): constrain and validate grounded
+  generation`); this documentation checkpoint is being committed on top
+  of it.
 - Environment: Python **3.12.13**, `foundry-local-sdk` **1.2.3**.
 - Default models: embedding `qwen3-embedding-0.6b`, chat `qwen3-1.7b`.
 - No secrets, `.env` files, `.venv/`, model caches, or generated
@@ -118,5 +163,11 @@ Done. 7 chunk(s) indexed and saved to data/index
 
 ## Remaining work
 
-1. Five-minute presentation and demo recording — **outside this
-   repository**; nothing further is planned inside it before submission.
+1. **Deterministic concise streamed output** — the strengthened
+   evaluation's personally verified result is 9/11 (two length-only
+   failures at 179 and 154 words against a 150-word limit). Next
+   session's priority: fix this without weakening the 150-word
+   evaluation limit.
+2. Five-minute presentation and demo recording — **outside this
+   repository**; not blocked by item 1, but final submission should
+   wait until item 1 is resolved.
