@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Iterator
+from typing import Iterator
 
 from foundry_local_sdk import Configuration, FoundryLocalManager
 
@@ -60,40 +60,33 @@ class FoundryRuntime:
         return FoundryLocalManager.instance
 
     def _download_eps(self) -> None:
-        """Download and register execution providers (idempotent after first run)."""
-        if not self._verbose:
-            self._manager.download_and_register_eps()
-            return
+        """Download and register execution providers (idempotent after first run).
 
-        # Track the current EP name so we can print a newline before switching.
-        current: list[str] = [""]
-
-        def _progress(ep_name: str, percent: float) -> None:
-            if ep_name != current[0]:
-                if current[0]:
-                    print()
-                current[0] = ep_name
-            print(f"\r  {ep_name:<40}  {percent:5.1f}%", end="", flush=True)
-
-        self._manager.download_and_register_eps(progress_callback=_progress)
-        if current[0]:
-            print()
+        Deliberately does NOT pass a progress_callback to the SDK. Doing so
+        makes the native layer invoke our Python callback from a background
+        .NET ThreadPool worker thread via a ctypes/libffi closure — observed
+        to segfault (EXC_BAD_ACCESS inside ffi_closure_SYSV_inner, called
+        from Microsoft.AI.Foundry.Local.Core.dylib's WebGpuEpBootstrapper
+        callback marshaling). Calling with no callback takes the SDK's plain
+        synchronous code path instead, which never crosses that boundary.
+        """
+        self._log("[foundry] Downloading/registering execution providers ...")
+        self._manager.download_and_register_eps()
+        self._log("[foundry] Execution providers ready.")
 
     def _load_model(self, alias: str, kind: str):
-        """Download (if needed) and load a model by its catalog alias."""
-        self._log(f"[foundry] Loading {kind} model: {alias}")
+        """Download (if needed) and load a model by its catalog alias.
+
+        Does NOT pass a progress_callback into model.download() for the
+        same reason as _download_eps() above — the SDK routes any
+        model.download() call with a callback through the identical
+        crash-prone native-to-Python callback path.
+        """
+        self._log(f"[foundry] Downloading {kind} model: {alias} (skipped if already cached) ...")
         model = self._manager.catalog.get_model(alias)
+        model.download()
 
-        if self._verbose:
-            model.download(
-                lambda p: print(
-                    f"\r  Downloading {alias}: {p:.1f}%", end="", flush=True
-                )
-            )
-            print()
-        else:
-            model.download()
-
+        self._log(f"[foundry] Loading {kind} model: {alias}")
         model.load()
         self._log(f"[foundry] {alias} ready.")
         return model

@@ -70,6 +70,12 @@ def index_documents(
     store = ChunkStore(index_dir / _DB_FILE)
     faiss_index = VectorIndex(dimension=dimension)
 
+    # VectorIndex is a fresh, empty FAISS index every run (IDs restart at 0),
+    # so ChunkStore's chunk_ids must also restart at 0 — otherwise the two
+    # ID spaces desync on any run after the first: FAISS returns id 0..N-1
+    # for THIS run's vectors, but a never-cleared store would resolve those
+    # ids against chunk rows left over from a previous, unrelated run.
+    store.clear()
     store.add(all_chunks)
     faiss_index.add(vectors)
 

@@ -19,11 +19,11 @@ def _mock_manager() -> MagicMock:
     return manager
 
 
-def _make_runtime(manager: MagicMock, **kwargs) -> FoundryRuntime:
+def _make_runtime(manager: MagicMock, verbose: bool = False, **kwargs) -> FoundryRuntime:
     with patch("src.llm.client.Configuration"), \
          patch("src.llm.client.FoundryLocalManager") as mock_manager_cls:
         mock_manager_cls.instance = manager
-        return FoundryRuntime(verbose=False, **kwargs)
+        return FoundryRuntime(verbose=verbose, **kwargs)
 
 
 def _requested_aliases(manager: MagicMock) -> list[str]:
@@ -99,3 +99,61 @@ def test_load_chat_false_stream_chat_raises_clear_error():
         pass
     finally:
         runtime.close()
+
+
+# ── Regression: no progress_callback crosses the native/background-thread
+# boundary (observed SIGSEGV in Microsoft.AI.Foundry.Local.Core.dylib when
+# the SDK invokes a Python callback from a ThreadPool worker thread via
+# ctypes/libffi — see SESSION_SUMMARY.md). Covers both verbose modes since
+# the crash-prone code path was only reachable when verbose=True. ──────────
+
+def test_download_and_register_eps_never_receives_a_progress_callback_verbose():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, verbose=True)
+    manager.download_and_register_eps.assert_called_once_with()
+    runtime.close()
+
+
+def test_download_and_register_eps_never_receives_a_progress_callback_quiet():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, verbose=False)
+    manager.download_and_register_eps.assert_called_once_with()
+    runtime.close()
+
+
+def test_model_download_never_receives_a_progress_callback_verbose():
+    manager = _mock_manager()
+    embed_model = MagicMock()
+    manager.catalog.get_model.return_value = embed_model
+    runtime = _make_runtime(manager, verbose=True, load_chat=False)
+    embed_model.download.assert_called_once_with()
+    runtime.close()
+
+
+def test_model_download_never_receives_a_progress_callback_quiet():
+    manager = _mock_manager()
+    embed_model = MagicMock()
+    manager.catalog.get_model.return_value = embed_model
+    runtime = _make_runtime(manager, verbose=False, load_chat=False)
+    embed_model.download.assert_called_once_with()
+    runtime.close()
+
+
+def test_verbose_index_only_load_still_downloads_loads_and_logs(capsys):
+    """The verbose index-only path (main.py index) must still complete
+    download + load and print progress lines, just without a native
+    progress callback."""
+    manager = _mock_manager()
+    embed_model = MagicMock()
+    manager.catalog.get_model.return_value = embed_model
+    runtime = _make_runtime(manager, verbose=True, load_chat=False)
+
+    embed_model.download.assert_called_once_with()
+    embed_model.load.assert_called_once_with()
+
+    out = capsys.readouterr().out
+    assert "Downloading embedding model" in out
+    assert "Loading embedding model" in out
+    assert f"{DEFAULT_EMBED_ALIAS} ready." in out
+
+    runtime.close()
