@@ -1,0 +1,90 @@
+[
+  {
+    "id": "rag-definition",
+    "question": "What is retrieval-augmented generation?",
+    "category": "grounded",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.txt"],
+    "expected_keywords": ["retrieval", "language model"]
+  },
+  {
+    "id": "semantic-search",
+    "question": "How does semantic search work?",
+    "category": "grounded",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.txt"],
+    "expected_keywords": ["embedding"]
+  },
+  {
+    "id": "foundry-local-serving",
+    "question": "How does Foundry Local serve models locally?",
+    "category": "grounded",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.md"],
+    "expected_keywords": ["REST", "API"]
+  },
+  {
+    "id": "chunking-concept",
+    "question": "What is chunking in a RAG pipeline?",
+    "category": "grounded",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.txt"],
+    "expected_keywords": ["chunk"]
+  },
+  {
+    "id": "foundry-local-base-url",
+    "question": "What is the default base URL for Foundry Local?",
+    "category": "grounded",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.md"],
+    "expected_keywords": ["5272"]
+  },
+  {
+    "id": "rag-definition-paraphrase",
+    "question": "Explain what RAG means.",
+    "category": "grounded_paraphrase",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.txt"],
+    "expected_keywords": []
+  },
+  {
+    "id": "semantic-search-paraphrase",
+    "question": "How does a vector search find similar text?",
+    "category": "grounded_paraphrase",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.txt"],
+    "expected_keywords": []
+  },
+  {
+    "id": "foundry-local-endpoints-paraphrase",
+    "question": "Which REST endpoints does Foundry Local expose?",
+    "category": "grounded_paraphrase",
+    "expected_type": "grounded",
+    "expected_sources": ["sample.md"],
+    "expected_keywords": []
+  },
+  {
+    "id": "unrelated-world-cup",
+    "question": "Who won the 2026 FIFA World Cup?",
+    "category": "unrelated",
+    "expected_type": "refused",
+    "expected_sources": [],
+    "expected_keywords": []
+  },
+  {
+    "id": "unrelated-weather",
+    "question": "What is the weather in Beirut today?",
+    "category": "unrelated",
+    "expected_type": "refused",
+    "expected_sources": [],
+    "expected_keywords": []
+  },
+  {
+    "id": "unrelated-capital",
+    "question": "What is the capital of France?",
+    "category": "unrelated",
+    "expected_type": "refused",
+    "expected_sources": [],
+    "expected_keywords": []
+  }
+]
