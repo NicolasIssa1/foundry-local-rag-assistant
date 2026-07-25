@@ -5,7 +5,7 @@ from typing import Callable, Iterator
 from foundry_local_sdk import Configuration, FoundryLocalManager
 
 DEFAULT_EMBED_ALIAS = "qwen3-embedding-0.6b"
-DEFAULT_CHAT_ALIAS = "qwen2.5-0.5b"
+DEFAULT_CHAT_ALIAS = "qwen3-1.7b"
 
 
 class FoundryRuntime:
