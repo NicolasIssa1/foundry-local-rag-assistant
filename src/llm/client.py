@@ -15,7 +15,9 @@ class FoundryRuntime:
       1. Initialises the SDK singleton.
       2. Downloads execution providers on first run (~200 MB, permanently cached).
       3. Downloads and loads the embedding model (first run only, then cached).
-      4. Downloads and loads the chat model (first run only, then cached).
+      4. Downloads and loads the chat model (first run only, then cached) —
+         unless load_chat=False, e.g. for index-only commands that never
+         call chat()/stream_chat() and so have no need for it.
 
     Use as a context manager so models are unloaded cleanly on exit:
 
@@ -29,6 +31,7 @@ class FoundryRuntime:
         embed_alias: str = DEFAULT_EMBED_ALIAS,
         chat_alias: str = DEFAULT_CHAT_ALIAS,
         verbose: bool = True,
+        load_chat: bool = True,
     ) -> None:
         self._embed_alias = embed_alias
         self._chat_alias = chat_alias
@@ -37,9 +40,13 @@ class FoundryRuntime:
         self._manager = self._init_sdk()
         self._download_eps()
         self._embed_model = self._load_model(embed_alias, kind="embedding")
-        self._chat_model = self._load_model(chat_alias, kind="chat")
         self._embed_client = self._embed_model.get_embedding_client()
-        self._chat_client = self._chat_model.get_chat_client()
+
+        self._chat_model = None
+        self._chat_client = None
+        if load_chat:
+            self._chat_model = self._load_model(chat_alias, kind="chat")
+            self._chat_client = self._chat_model.get_chat_client()
 
     # ── Internal setup helpers ────────────────────────────────────────────────
 
@@ -99,11 +106,19 @@ class FoundryRuntime:
 
     def chat(self, messages: list[dict]) -> str:
         """Send a messages list and return the complete response string."""
+        if self._chat_client is None:
+            raise RuntimeError(
+                "Chat model was not loaded (FoundryRuntime constructed with load_chat=False)."
+            )
         response = self._chat_client.complete_chat(messages)
         return response.choices[0].message.content
 
     def stream_chat(self, messages: list[dict]) -> Iterator[str]:
         """Yield response tokens one at a time for streaming output."""
+        if self._chat_client is None:
+            raise RuntimeError(
+                "Chat model was not loaded (FoundryRuntime constructed with load_chat=False)."
+            )
         for chunk in self._chat_client.complete_streaming_chat(messages):
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
@@ -111,9 +126,10 @@ class FoundryRuntime:
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def close(self) -> None:
-        """Unload both models and release native resources."""
+        """Unload the loaded models and release native resources."""
         self._embed_model.unload()
-        self._chat_model.unload()
+        if self._chat_model is not None:
+            self._chat_model.unload()
 
     def __enter__(self) -> FoundryRuntime:
         return self

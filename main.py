@@ -26,7 +26,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     print("Foundry Local RAG Assistant — Indexing")
     print("=" * 50)
 
-    with FoundryRuntime() as runtime:
+    with FoundryRuntime(load_chat=False) as runtime:
         embedder = FoundryEmbedder(
             client=runtime.get_embedding_client(),
             model=runtime._embed_alias,
