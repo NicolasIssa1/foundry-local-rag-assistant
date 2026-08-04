@@ -1,18 +1,19 @@
 """Runs evaluation cases through the real retrieval + chat pipeline.
 
 Mirrors src.pipeline.query.query()'s logic exactly — same Retriever, same
-relevance threshold, same prompt builder, same chat model, same think-block
-filter — but keeps retrieval time and generation time separate for
-reporting, and never calls the chat model when nothing passes the
-relevance threshold. Does not modify or import anything from main.py/CLI;
-does not alter application behaviour.
+relevance threshold, same prompt builder, same chat model, same
+generate_answer() pipeline (think-block filtering, deterministic
+finalisation, metric-claim guard) — but keeps retrieval time and
+generation time separate for reporting, and never calls the chat model
+when nothing passes the relevance threshold. Does not modify or import
+anything from main.py/CLI; does not alter application behaviour.
 """
 from __future__ import annotations
 
 import time
 
 from ..llm.client import FoundryRuntime
-from ..llm.think_filter import filter_think_stream
+from ..llm.generation import generate_answer
 from ..prompt.builder import build
 from ..retrieval.retriever import Retriever
 from .dataset import EvalCase
@@ -35,8 +36,9 @@ def run_case(case: EvalCase, retriever: Retriever, runtime: FoundryRuntime) -> E
     else:
         prompt = build(chunks, case.question)
         messages = [{"role": "user", "content": prompt}]
+        context_text = "\n\n".join(chunk.text for chunk in chunks)
         t1 = time.perf_counter()
-        answer = "".join(filter_think_stream(runtime.stream_chat(messages)))
+        answer = generate_answer(runtime, messages, context_text, stream=True)
         generation_time = time.perf_counter() - t1
 
     return score_case(case, chunks, answer, retrieval_time, generation_time)

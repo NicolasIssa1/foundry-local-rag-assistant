@@ -16,6 +16,8 @@ from src.llm.client import (
     DEFAULT_EMBED_ALIAS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_PRESENCE_PENALTY,
+    DEFAULT_RANDOM_SEED,
+    DEFAULT_TEMPERATURE,
     FoundryRuntime,
 )
 
@@ -215,6 +217,40 @@ def test_max_tokens_is_a_reasonable_positive_limit():
 def test_load_chat_false_does_not_touch_chat_settings():
     """No chat client exists when load_chat=False, so there is nothing to
     configure — must not raise."""
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=False)
+    assert runtime._chat_client is None
+    runtime.close()
+
+
+# ── Deterministic decoding (Phase 4): temperature=0 + a fixed random_seed,
+# added after repeated evaluation runs showed run-to-run variance in
+# length/repetition/factual claims with identical prompts. Both fields are
+# real ChatClientSettings parameters on the installed SDK (verified by
+# reading foundry_local_sdk/openai/chat_client.py), not guessed. ──────────
+
+def test_chat_client_gets_temperature_configured():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=True)
+    assert runtime._chat_client.settings.temperature == DEFAULT_TEMPERATURE
+    runtime.close()
+
+
+def test_temperature_is_low_and_nonzero():
+    """Guards the empirical finding in client.py: temperature=0.0 silently
+    disables presence_penalty on this backend and causes a degenerate
+    <think>-block repetition loop; a small nonzero value is required."""
+    assert 0.0 < DEFAULT_TEMPERATURE <= 0.3
+
+
+def test_chat_client_gets_random_seed_configured():
+    manager = _mock_manager()
+    runtime = _make_runtime(manager, load_chat=True)
+    assert runtime._chat_client.settings.random_seed == DEFAULT_RANDOM_SEED
+    runtime.close()
+
+
+def test_load_chat_false_does_not_touch_temperature_or_seed():
     manager = _mock_manager()
     runtime = _make_runtime(manager, load_chat=False)
     assert runtime._chat_client is None

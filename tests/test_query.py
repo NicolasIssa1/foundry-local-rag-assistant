@@ -387,6 +387,59 @@ def test_query_zero_retrieval_behaviour_unaffected_by_think_filter(tmp_path, cap
     runtime.stream_chat.assert_not_called()
 
 
+# ── Deterministic finalization (Phase 4) — integrated end-to-end via query() ─────
+
+def test_query_deduplicates_repeated_paragraph_in_answer(tmp_path):
+    chunks = [_chunk("RAG text.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0])
+    duplicated = "This fact is stated clearly and grounded in context.\n\nThis fact is stated clearly and grounded in context."
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter([duplicated])
+    result = query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        verbose=False,
+    )
+    assert result.answer == "This fact is stated clearly and grounded in context."
+
+
+def test_query_answer_finalization_never_alters_sources(tmp_path, capsys):
+    """Sources must be identical whether or not the raw answer needed
+    deduplication/truncation — finalize_answer only ever touches the
+    answer text, never the retrieved chunks."""
+    chunks = [
+        _chunk("Passage A.", "/data/report.txt", chunk_index=0),
+        _chunk("Passage B.", "/data/guide.md", chunk_index=0),
+    ]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0, V1])
+    duplicated = "Grounded fact repeated for the test.\n\nGrounded fact repeated for the test."
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter([duplicated])
+    result = query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        k=2, distance_threshold=None, verbose=False,
+    )
+    captured = capsys.readouterr()
+    assert "report.txt" in captured.out
+    assert "guide.md" in captured.out
+    assert len(result.sources) == 2
+
+
+def test_query_enforces_word_limit_on_generated_answer(tmp_path):
+    chunks = [_chunk("RAG text.", "/data/report.txt")]
+    index_dir = _build_index_dir(tmp_path, chunks, [V0])
+    long_answer = " ".join(f"word{i}" for i in range(300)) + "."
+    runtime = MagicMock()
+    runtime.stream_chat.return_value = iter([long_answer])
+    result = query(
+        question="What is RAG?", index_dir=index_dir,
+        embedder=_mock_embedder(V0), runtime=runtime,
+        verbose=False,
+    )
+    assert len(result.answer.split()) <= 150
+
+
 def test_query_normal_relevant_flow_unaffected_by_default_threshold(tmp_path, capsys):
     """An exact (distance 0) match must sail through the default threshold and
     produce a normal answer + Sources section, unchanged from before filtering."""

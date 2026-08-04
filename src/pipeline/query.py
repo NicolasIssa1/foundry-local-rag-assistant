@@ -6,7 +6,7 @@ from typing import Callable, Iterator, NamedTuple
 from ..embeddings.foundry_embedder import FoundryEmbedder
 from ..ingestion.models import Chunk
 from ..llm.client import FoundryRuntime
-from ..llm.think_filter import filter_think_stream
+from ..llm.generation import generate_answer
 from ..prompt.builder import build, format_sources
 from ..retrieval.retriever import DEFAULT_DISTANCE_THRESHOLD, Retriever
 from ..vectorstore.index import VectorIndex
@@ -46,10 +46,12 @@ def query(
          a deterministic "not found" message is printed and returned instead,
          with an empty sources list.
       4. Build a RAG prompt with source citations.
-      5. Call the chat model (streaming by default) and print the answer.
-         Any <think>...</think> reasoning block (e.g. from Qwen3) is
-         suppressed live via filter_think_stream before it reaches the
-         terminal or the returned answer.
+      5. Call the chat model (streaming by default) and finalize the
+         answer via generate_answer(): <think>...</think> reasoning is
+         suppressed, the text is deterministically cleaned (whitespace,
+         duplicate paragraphs/sentences, 150-word cap), and any named
+         similarity/distance metric unsupported by the retrieved context
+         triggers one corrective regeneration. See src/llm/generation.py.
       6. Print a Sources section built directly from the retrieved chunks
          (never from the model's own output).
 
@@ -87,19 +89,14 @@ def query(
 
     # ── Build prompt ─────────────────────────────────────────────────────────
     prompt = build(chunks, question)
+    context_text = "\n\n".join(chunk.text for chunk in chunks)
 
     # ── Call LLM ─────────────────────────────────────────────────────────────
     messages = [{"role": "user", "content": prompt}]
-    answer_parts: list[str] = []
+    answer = generate_answer(runtime, messages, context_text, stream=stream)
 
     if stream:
-        for token in filter_think_stream(runtime.stream_chat(messages)):
-            print(token, end="", flush=True)
-            answer_parts.append(token)
-        print()
-    else:
-        answer = runtime.chat(messages)
-        answer_parts.append("".join(filter_think_stream([answer])))
+        print(answer)
 
     # ── Sources ──────────────────────────────────────────────────────────────
     # Always shown, regardless of verbose — built from the retrieved chunks
@@ -108,4 +105,4 @@ def query(
     print(format_sources(chunks))
 
     store.close()
-    return QueryResult(answer="".join(answer_parts), sources=chunks)
+    return QueryResult(answer=answer, sources=chunks)

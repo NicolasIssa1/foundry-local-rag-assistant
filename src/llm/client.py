@@ -49,6 +49,37 @@ DEFAULT_CHAT_ALIAS = "qwen3-1.7b"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_PRESENCE_PENALTY = 1.0
 
+# Deterministic decoding (added after repeated evaluation runs showed
+# run-to-run variance in length/repetition/factual claims with identical
+# prompts). Both fields are real, supported ChatClientSettings parameters
+# on the installed foundry_local_sdk (1.2.3) — verified by reading
+# foundry_local_sdk/openai/chat_client.py rather than guessed.
+#
+# temperature=0.0 (pure greedy decoding) was tried FIRST, since it should
+# in principle remove all sampling randomness. It was rejected after
+# empirical testing: on this backend (qwen3-1.7b via the local ONNX
+# Runtime GenAI execution provider), temperature=0 silently disables
+# presence_penalty — verified by setting presence_penalty to 1.0, 1.5, and
+# 2.0 with temperature=0 on a real query and getting byte-identical output
+# every time — and greedy decoding then falls into a degenerate <think>
+# repetition loop for at least one real evaluation question ("What is the
+# default base URL for Foundry Local?"), consuming the entire max_tokens
+# budget without ever closing the think block. Because ThinkBlockFilter
+# correctly discards an unterminated think block, this produced a
+# byte-identical EMPTY visible answer on every run — deterministic, but
+# deterministically broken, which is worse than the variance it was meant
+# to fix.
+#
+# temperature=0.1 was tested next: presence_penalty took effect again, the
+# repetition loop did not occur, and the same question/prompt produced
+# byte-identical non-empty answers across repeated real calls (verified:
+# 3 consecutive calls each for two different questions, all matching
+# exactly) once random_seed is also fixed. This is the smallest departure
+# from temperature=0 that restores both anti-repetition safeguards and
+# real determinism on this backend, so it's used instead of 0.0.
+DEFAULT_TEMPERATURE = 0.1
+DEFAULT_RANDOM_SEED = 0
+
 
 class FoundryRuntime:
     """Manages the Foundry Local SDK lifecycle for embedding and chat models.
@@ -91,6 +122,8 @@ class FoundryRuntime:
             self._chat_client = self._chat_model.get_chat_client()
             self._chat_client.settings.max_tokens = DEFAULT_MAX_TOKENS
             self._chat_client.settings.presence_penalty = DEFAULT_PRESENCE_PENALTY
+            self._chat_client.settings.temperature = DEFAULT_TEMPERATURE
+            self._chat_client.settings.random_seed = DEFAULT_RANDOM_SEED
 
     # ── Internal setup helpers ────────────────────────────────────────────────
 
