@@ -49,9 +49,13 @@ def query(
       5. Call the chat model (streaming by default) and finalize the
          answer via generate_answer(): <think>...</think> reasoning is
          suppressed, the text is deterministically cleaned (whitespace,
-         duplicate paragraphs/sentences, 150-word cap), and any named
-         similarity/distance metric unsupported by the retrieved context
-         triggers one corrective regeneration. See src/llm/generation.py.
+         duplicate paragraphs/sentences, 150-word cap), and at most one
+         corrective regeneration is triggered by either: a named
+         similarity/distance metric the retrieved context doesn't
+         affirmatively support, or — only when the question/answer is
+         actually about similarity/distance behaviour — an affirmatively
+         supported metric the answer omitted. See src/llm/generation.py
+         and src/llm/metric_guard.py.
       6. Print a Sources section built directly from the retrieved chunks
          (never from the model's own output).
 
@@ -93,7 +97,7 @@ def query(
 
     # ── Call LLM ─────────────────────────────────────────────────────────────
     messages = [{"role": "user", "content": prompt}]
-    answer = generate_answer(runtime, messages, context_text, stream=stream)
+    answer = generate_answer(runtime, messages, context_text, question, stream=stream)
 
     if stream:
         print(answer)

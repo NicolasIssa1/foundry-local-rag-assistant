@@ -38,7 +38,7 @@ def run_case(case: EvalCase, retriever: Retriever, runtime: FoundryRuntime) -> E
         messages = [{"role": "user", "content": prompt}]
         context_text = "\n\n".join(chunk.text for chunk in chunks)
         t1 = time.perf_counter()
-        answer = generate_answer(runtime, messages, context_text, stream=True)
+        answer = generate_answer(runtime, messages, context_text, case.question, stream=True)
         generation_time = time.perf_counter() - t1
 
     return score_case(case, chunks, answer, retrieval_time, generation_time)
