@@ -1,147 +1,152 @@
-# Session Summary — 2026-07-25 Checkpoint (M6 complete, submission audit)
+# Session Summary — 2026-08-08 Final Checkpoint (submission-ready)
 
 ## Project status
 
-- **M1–M5** — complete (ingestion, chunking, embeddings, vector store,
-  retrieval, prompt builder, Foundry Local SDK integration).
-- **M6** (CLI/quality polish) — source display, relevance filtering,
-  chat-model benchmarking/selection, think-block suppression, index-only
-  loading, CLI usability/error handling, and the evaluation dataset +
-  script are all done. A native indexing crash and a chunk-store/FAISS
-  ID desync bug were found and fixed in a later repair session (see
-  below).
-- **Known open issue:** the strengthened evaluation's personally
-  verified result is **9/11** — two answers exceed the 150-word length
-  limit. The project is **not** considered finally submission-ready
-  until this is resolved; see "Manual QA checkpoint" below and
-  "Remaining work" at the end of this file.
+**Technically complete and ready for submission.** All milestones (M1–M7)
+are done, the full automated test suite and the bundled evaluation
+dataset both pass consistently, and a fresh-clone reproducibility check
+succeeded. The only work remaining is outside this repository's code —
+see [Remaining work](#remaining-work) below.
 
-## What we completed this session
+## Final architecture
 
-1. **Chat-model benchmark — committed as `6e9a393`.**
-   Compared baseline `qwen2.5-0.5b` against candidate `qwen3-1.7b` using
-   identical retrieval results, prompts, embedding model
-   (`qwen3-embedding-0.6b`), and relevance threshold (1.25) for both.
-   `qwen3-1.7b` was more grounded and factually precise; `qwen2.5-0.5b`
-   fabricated an unsupported "API Key endpoint" and gave an internally
-   contradictory answer on semantic search.
-2. **Think-block suppression — committed as `33c00b2`.**
-   `src/llm/think_filter.py` (`ThinkBlockFilter` + `filter_think_stream()`)
-   strips `<think>...</think>` blocks from a live token stream, correctly
-   handling tags split across arbitrary chunk boundaries. Wired into
-   `src/pipeline/query.py`.
-3. **qwen3-1.7b promoted to default chat model — committed as `4be7208`.**
-   `DEFAULT_CHAT_ALIAS` in `src/llm/client.py` changed from
-   `qwen2.5-0.5b` to `qwen3-1.7b`. `DEFAULT_EMBED_ALIAS`
-   (`qwen3-embedding-0.6b`) unchanged.
-4. **Index-only commands no longer load the chat model — committed as
-   `8a30c71`.** `FoundryRuntime(load_chat=False)` used by `main.py
-   index`; query commands are unaffected.
-5. **Documentation checkpoints — committed as `491377c`, `b2237e4`,
-   `77ce4af`.** `SESSION_SUMMARY.md` and `README.md` brought up to date
-   with the model change, think-block suppression, and lazy loading;
-   README rewritten to match the actual implemented structure (it had
-   drifted from the original M1 scaffold text).
-6. **CLI usability and error handling — committed as `07ffa44`.**
-   `main.py` now fails fast (before loading any model) on a missing
-   `--data-dir` or missing `--index-dir`, rejects an empty question via
-   an argparse-level validator, handles `Ctrl-C` cleanly (exit 130), and
-   has descriptive `--help` text with examples for both subcommands. 9
-   new tests in `tests/test_main.py`.
-7. **Reusable evaluation dataset + script — committed as `b9d66a3`.**
-   `src/evaluation/` (`dataset.py`, `scoring.py`, `runner.py`) plus
-   `src/evaluation/eval_dataset.json` (11 cases: 5 grounded, 3 paraphrased
-   grounded, 3 unrelated/should-be-refused) and `scripts/evaluate_rag.py`,
-   which runs the dataset through the real retriever/threshold/prompt
-   builder/chat model and reports per-case + summary results. 29 new
-   tests in `tests/test_evaluation.py`.
-8. **Final submission audit — this checkpoint.** Verified no secrets,
-   `.env` files, `.venv/`, model caches, or generated index/log files are
-   tracked; removed the "TEMPORARY... not intended to be committed"
-   docstring language from `scripts/benchmark_chat_models.py` (it has
-   real, cited submission value) and fixed a stale `qwen2.5-0.5b`
-   docstring reference in `scripts/demo_m5.py`; brought `README.md`'s
-   test count and Evaluation section up to date and consolidated the
-   quick-start workflow (clone → venv → install → index → query → test →
-   evaluate) into one place.
-9. **Current test baseline: 327 passed, 1 skipped, 0 failed.**
-10. **Latest real evaluation run: 11/11 passed** — 0 type mismatches, 0
-    source mismatches, 0 keyword mismatches; all 3 unrelated questions
-    were blocked before any LLM call. ~40.8s wall-clock for all 11 cases
-    on the development machine (not a portable timing benchmark).
+- **Embedding model:** `qwen3-embedding-0.6b` (Microsoft Foundry Local)
+- **Chat model:** `qwen3-1.7b` (Microsoft Foundry Local)
+- **Runtime:** Microsoft Foundry Local SDK (`foundry-local-sdk` 1.2.3),
+  managed via `FoundryRuntime` (`src/llm/client.py`)
+- **Vector index:** FAISS `IndexFlatL2` — squared L2 distance
+- **Relevance threshold:** `DEFAULT_DISTANCE_THRESHOLD = 1.25`
+- **Chunk metadata:** SQLite (`data/index/chunks.db`)
+- **Document ingestion:** `.txt` and `.md`
+- **Interface:** Python CLI (`main.py index` / `main.py query`)
+- **Local-only confirmed:** no OpenAI or Anthropic cloud API key is
+  required by the application; the `openai` Python package is used only
+  as a generic OpenAI-compatible client pointed at Foundry Local's local
+  endpoint (`http://localhost:5272`). Embedding generation, chat
+  generation, FAISS search, and SQLite metadata all run on-device.
 
-## Manual QA checkpoint — 2026-07-25 (later same day)
+## Completed milestones
 
-A repair session fixed a native segmentation fault and a chunk-store ID
-desync bug (see `git log` — commits `0600c8a` and `1c17d0c`), added
-generation safeguards, and strengthened the evaluation with objective
-length/repetition/forbidden-phrase/think-tag/required-keyword checks.
-After that session, the following was personally verified by hand:
+| # | Milestone | Status |
+|---|---|---|
+| M1 | Project scaffold and repository setup | ✅ Complete |
+| M2 | Document ingestion pipeline (load, clean, chunk) | ✅ Complete |
+| M3 | Embedding pipeline and FAISS vector store | ✅ Complete |
+| M4 | Retrieval and prompt construction | ✅ Complete |
+| M5 | Foundry Local LLM integration and end-to-end query | ✅ Complete |
+| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete |
+| M7 | Grounding hardening — deterministic generation settings, answer finalization, duplicate/repetition removal, concise-output enforcement, unsupported/missing retrieval-metric guard | ✅ Complete |
 
-- **Full test suite: 371 passed, 1 skipped, 0 failed.**
-- **Fresh indexing succeeded twice consecutively** (`python main.py
-  index`, run back-to-back) — the previously observed segmentation
-  fault is **confirmed fixed**. Both runs produced **7 chunks**.
-- A grounded query (`python main.py query "What is
-  retrieval-augmented generation?"`) worked correctly and displayed
-  both `sample.txt` and `sample.md` as sources.
-- A vector-search query correctly described **FAISS IndexFlatL2** and
-  **L2 distance** — the previously observed false "cosine similarity"
-  claim did not occur in this manual check.
-- The unrelated "What is the weather in Beirut today?" question was
-  refused, with **0 retrieved chunks** — the chat model was not called.
-- **No visible `<think>` tags** occurred in any manual check.
-- The repository remained **clean** throughout.
-- The strengthened evaluation (`python scripts/evaluate_rag.py`)
-  correctly detected **two remaining answer-length failures**:
-  - **Current personal evaluation result: 9/11 passed.**
-  - Both failures were **length-only** (no repetition, no forbidden
-    phrases, no think-tag leaks):
-    - `rag-definition`: **179 words** (limit: 150)
-    - `rag-definition-paraphrase`: **154 words** (limit: 150)
-  - **0 type mismatches, 0 source mismatches, 0 forbidden-phrase
-    failures, 0 repetition failures, 0 visible-think-tag failures.**
+## Major issues found and fixed (across all sessions)
 
-**Next session priority:** deterministic concise streamed output —
-without weakening the 150-word evaluation limit. The mechanical bugs
-(crash, ID desync, uncontrolled repetition, false-claim root cause) are
-fixed; the model still occasionally exceeds the length target on some
-questions, and that's the remaining open item before this project can
-be called finally submission-ready.
+1. **Native segmentation fault during `main.py index`** — a
+   ctypes/libffi callback-marshaling issue when the Foundry Local SDK's
+   native layer invoked a Python progress callback from a background
+   thread. Fixed by not passing a progress callback, taking the SDK's
+   synchronous code path instead (commit `0600c8a`).
+2. **Chunk-store/FAISS ID desync** — could serve stale chunk text after
+   re-indexing (commit `1c17d0c`).
+3. **Uncontrolled generation** — extreme repetition and a leaked closing
+   `</think>` tag, fixed with `max_tokens`, `presence_penalty`, and a
+   strengthened system prompt (commit `1c17d0c`).
+4. **False "cosine similarity" claim** — root-caused to generic
+   textbook language in the indexed sample corpus itself (a grounded
+   model can only state what's retrievable); corrected the corpus and
+   added `src/evaluation/safety_checks.py` as an independent,
+   deterministic detector (commit `1c17d0c`).
+5. **Run-to-run non-determinism** — `temperature=0.0` was tried first
+   and rejected (it silently disabled `presence_penalty` on this backend
+   and produced a degenerate empty-answer loop on a real question);
+   `temperature=0.1` with a fixed `random_seed=0` restores both
+   anti-repetition behavior and real determinism (commit `ed5b78d`).
+6. **Answer-length overruns** — two evaluation cases (179 and 154 words
+   against a 150-word limit) with no repetition, forbidden-phrase, or
+   think-tag involvement. Fixed with `src/llm/answer_finalizer.py`
+   (deterministic whitespace/dedup/length-limiting pass applied to every
+   answer) (commit `ed5b78d`).
+7. **Unsupported/missing retrieval-metric mentions surviving
+   finalization** — `src/llm/metric_guard.py` added to detect an
+   affirmed-but-unsupported metric claim (distinguishing affirmation
+   from negation, e.g. "...L2 rather than cosine similarity...") and to
+   detect a supported, on-topic metric the model omitted, triggering one
+   corrective regeneration plus an unconditional deterministic strip as
+   a final backstop (commit `49705ab`).
 
-## Real CLI validation (with the current defaults)
+## Final test count
 
-`python main.py query "What is retrieval-augmented generation?"` — grounded,
-no `<think>` content, real Sources section:
+**470 passed, 1 skipped, 0 failed** — `python -m pytest`, ~1s runtime.
+Covers ingestion, chunking, embeddings, the vector store,
+retrieval/relevance filtering, prompt building, the query pipeline, the
+think-block filter, answer finalization, the metric guard,
+`FoundryRuntime`'s lazy chat-model loading, the CLI, and the evaluation
+harness.
+
+## Final evaluation: 11/11, three consecutive stable runs
+
+`python scripts/evaluate_rag.py` was run three times consecutively
+against the real index immediately before final acceptance, with
+identical results each time:
+
+| Run | Passed | Type/source mismatches | Forbidden-phrase / repetition / think-tag / length failures | Wall-clock |
+|---|---|---|---|---|
+| 1 | 11/11 | 0 / 0 | 0 / 0 / 0 / 0 | 56.06s |
+| 2 | 11/11 | 0 / 0 | 0 / 0 / 0 / 0 | 54.39s |
+| 3 | 11/11 | 0 / 0 | 0 / 0 / 0 / 0 | 54.74s |
+
+All 3 "unrelated" cases (`unrelated-world-cup`, `unrelated-weather`,
+`unrelated-capital`) were confirmed blocked before any LLM call in every
+run. One `keyword_mismatch` (informational only, never a pass/fail gate)
+recurred consistently on `foundry-local-serving` across all three runs —
+expected free-form phrasing variance, not a defect.
+
+## Final clean-clone acceptance result
+
+A fresh `git clone` of the GitHub repository into a temporary directory
+(outside the working project), with a brand-new Python 3.12 virtual
+environment and `pip install -r requirements.txt` from a clean cache,
+reproduced:
+
+- All core modules import successfully (`main`, `src.pipeline.*`,
+  `src.llm.client`, `src.vectorstore.*`, etc.)
+- **470 passed, 1 skipped, 0 failed** — identical to the working copy.
+
+The temporary clone was removed afterward; the real project directory
+was not modified.
+
+## Repository hygiene result
+
+**Passed.** `git ls-files` (66 tracked files) contains no `.venv/`,
+`__pycache__/`, `.pytest_cache/`, generated `data/index/` artifacts,
+downloaded model caches, `.env` files, API keys, or `.DS_Store`. The
+sole tracked file under `models/` is the `.gitkeep` sentinel. Working
+tree was clean before and after the full acceptance test.
+
+## Real CLI validation (current defaults)
+
+`python main.py query "What is retrieval-augmented generation?"` —
+grounded, no `<think>` content, real Sources section:
 
 ```
-**Retrieval-Augmented Generation (RAG)** is a technique used in AI systems to
-enhance the quality and relevance of the responses generated by the model.
-
-RAG works by combining the knowledge of a language model with the knowledge
-of an external knowledge base. This allows the model to generate responses
-that are more accurate, relevant, and up-to-date than responses generated by
-a standard language model.
-
-In summary, **RAG** is a technique that enhances the performance of a
-language model by integrating external knowledge bases.
+Retrieval-Augmented Generation (RAG) is an AI architecture that enhances
+a language model's responses by supplying it with relevant information
+retrieved from an external knowledge base at query time.
 
 Sources:
   [1] sample.txt (page 1)
   [2] sample.md (page 1)
 ```
 
-`python main.py query "Who won the 2026 FIFA World Cup?"` — retrieval finds
-zero chunks above the relevance threshold, so the chat model is **never
-called**, and the deterministic refusal is returned instead:
+`python main.py query "Who won the 2026 FIFA World Cup?"` — retrieval
+finds zero chunks above the relevance threshold, so the chat model is
+**never called**, and the deterministic refusal is returned instead:
 
 ```
 [query] Retrieved 0 chunk(s) for: 'Who won the 2026 FIFA World Cup?'
 I could not find relevant information in the indexed documents.
 ```
 
-`python main.py index` — only the embedding model loads (no "Loading chat
-model" line):
+`python main.py index` — only the embedding model loads (no "Loading
+chat model" line):
 
 ```
 [foundry] Loading embedding model: qwen3-embedding-0.6b
@@ -152,10 +157,8 @@ Done. 7 chunk(s) indexed and saved to data/index
 
 ## Current repository state
 
-- Working tree is **clean** and **fully synchronized with `origin/main`**
-  as of commit `1c17d0c` (`fix(llm): constrain and validate grounded
-  generation`); this documentation checkpoint is being committed on top
-  of it.
+- Working tree **clean**, `main` **synchronized with `origin/main`** at
+  commit `49705ab` as of this documentation checkpoint.
 - Environment: Python **3.12.13**, `foundry-local-sdk` **1.2.3**.
 - Default models: embedding `qwen3-embedding-0.6b`, chat `qwen3-1.7b`.
 - No secrets, `.env` files, `.venv/`, model caches, or generated
@@ -163,11 +166,9 @@ Done. 7 chunk(s) indexed and saved to data/index
 
 ## Remaining work
 
-1. **Deterministic concise streamed output** — the strengthened
-   evaluation's personally verified result is 9/11 (two length-only
-   failures at 179 and 154 words against a 150-word limit). Next
-   session's priority: fix this without weakening the 150-word
-   evaluation limit.
-2. Five-minute presentation and demo recording — **outside this
-   repository**; not blocked by item 1, but final submission should
-   wait until item 1 is resolved.
+No core development work remains. What's left is outside this
+repository's code:
+
+1. **Submission packaging.**
+2. **5-minute presentation/demo recording.**
+3. **Certificate submission.**

@@ -45,6 +45,13 @@ Key behaviors, beyond a basic "embed, search, generate" loop:
   the Foundry Local SDK's native layer) and a chunk-store/FAISS ID
   desync bug that could serve stale chunk text after re-indexing have
   both been fixed and verified — see `SESSION_SUMMARY.md` for details.
+- **Deterministic, grounded generation.** Beyond the base "embed, search,
+  generate" loop, every answer passes through a fixed pipeline before
+  it's shown: fixed decoding settings for run-to-run consistency,
+  duplicate-paragraph/sentence removal, a concise-answer word-count
+  cap, and a corpus-agnostic guard against unsupported similarity/
+  distance metric claims. See
+  [Grounding safeguards](#grounding-safeguards) below.
 
 ---
 
@@ -259,6 +266,59 @@ for this use case than the latency difference. See
 
 ---
 
+## Grounding safeguards
+
+A small local model can be inconsistent even when retrieval is correct.
+Every answer — in both `main.py query` and `scripts/evaluate_rag.py` —
+passes through the same fixed pipeline (`src/llm/generation.py`) before
+it's shown or scored:
+
+- **Deterministic generation settings.** `temperature=0.1`,
+  `random_seed=0`, `presence_penalty=1.0`, and `max_tokens=1024` are set
+  on the chat client (`src/llm/client.py`) so repeated runs on the same
+  question produce consistent, non-degenerate output. (`temperature=0.0`
+  was tried and rejected — on this backend it silently disabled
+  `presence_penalty` and produced a truncated, empty-looking answer on
+  at least one real question.)
+- **Answer finalization.** `src/llm/answer_finalizer.py` runs a
+  deterministic post-processing pass on every raw answer: it strips any
+  stray `<think>` content that reached this far, normalizes incidental
+  whitespace, and removes duplicate paragraphs/sentences.
+- **Duplicate/repetition removal.** Part of the same finalization pass —
+  verbatim duplicate paragraphs and near-duplicate sentences (6+ words)
+  are collapsed to their first occurrence, including the observed
+  failure mode where each repeat is prefixed with a different fabricated
+  citation number.
+- **Concise output limit.** The finalizer enforces a 150-word cap,
+  truncating at the last complete sentence boundary that fits rather
+  than cutting mid-sentence.
+- **Unsupported retrieval-metric protection.** `src/llm/metric_guard.py`
+  checks whether a similarity/distance metric named in the answer (e.g.
+  "cosine similarity") is actually affirmed by the retrieved context,
+  distinguishing an affirmed claim from a negated one (e.g. "...L2
+  distance rather than cosine similarity..." does *not* count as
+  affirming cosine similarity). An answer that names an unsupported
+  metric triggers one corrective regeneration, then an unconditional
+  deterministic strip as a final backstop.
+- **Relevant supported metric preservation.** The same guard also
+  detects when a question is on-topic for similarity/distance behavior
+  and the context affirmatively supports a metric (e.g. FAISS
+  `IndexFlatL2`/squared L2) that the answer omitted, and triggers a
+  regeneration so that real, retrievable implementation detail isn't
+  dropped in favor of a generic answer.
+- **Zero-chunk LLM skip.** If no retrieved chunk passes the relevance
+  threshold (`DEFAULT_DISTANCE_THRESHOLD = 1.25`), the chat model is
+  never invoked at all — the CLI returns the deterministic "I could not
+  find relevant information in the indexed documents." message instead.
+
+None of this guarantees perfect output from a 1.7B local model on every
+possible question — see [Limitations](#limitations-and-future-improvements)
+— but it is why the bundled evaluation dataset has run repeatedly (see
+`SESSION_SUMMARY.md`) with consistent 11/11 results and zero repetition,
+forbidden-phrase, or visible-think-tag failures.
+
+---
+
 ## Design Decisions
 
 **Why FAISS over a hosted vector database?**
@@ -303,15 +363,15 @@ invoking the CLI.
 | M3 | Embedding pipeline and FAISS vector store | ✅ Complete |
 | M4 | Retrieval and prompt construction | ✅ Complete |
 | M5 | Foundry Local LLM integration and end-to-end query | ✅ Complete |
-| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete, with one known open item below |
+| M6 | CLI/quality polish — source display, relevance filtering, chat-model benchmarking, think-block suppression, lazy model loading, CLI usability/error handling, evaluation dataset + script | ✅ Complete |
+| M7 | Grounding hardening — deterministic generation settings, answer finalization, duplicate/repetition removal, concise-output enforcement, unsupported/missing retrieval-metric guard | ✅ Complete |
 
-**Not yet finally submission-ready.** A known evaluation issue remains:
-the latest personally verified evaluation run is **9/11**, with 2
-answers exceeding the 150-word length limit (see
-[Evaluation](#evaluation)). Deterministic concise output is the next
-priority, tracked in `SESSION_SUMMARY.md`. The 5-minute
-presentation/demo recording (outside this repository) is also still
-remaining.
+**Technically complete and ready for submission.** The full automated
+test suite and the bundled evaluation dataset both pass consistently
+(see [Testing](#testing) and [Evaluation](#evaluation)) — see
+`SESSION_SUMMARY.md` for the final acceptance checkpoint. The only
+remaining work is outside this repository's code: submission packaging
+and the 5-minute presentation/demo recording.
 
 ---
 
@@ -321,11 +381,11 @@ remaining.
 pytest
 ```
 
-As of this checkpoint: **371 passed, 1 skipped, 0 failed** — covering
+As of this checkpoint: **470 passed, 1 skipped, 0 failed** — covering
 ingestion, chunking, embeddings, the vector store, retrieval/relevance
 filtering, prompt building, the query pipeline, the think-block filter,
-`FoundryRuntime`'s lazy chat-model loading, the CLI, and the evaluation
-harness.
+answer finalization, the metric guard, `FoundryRuntime`'s lazy
+chat-model loading, the CLI, and the evaluation harness.
 
 ---
 
@@ -365,27 +425,29 @@ An optional `expected_keywords` field is also reported per case, but is
 purely informational and never fails a case — free-form LLM phrasing can
 vary even for a fully correct answer.
 
-**Latest personally verified local run: 9/11 passed.** The 2 failures
-were both **length-only** — `rag-definition` (179 words) and
-`rag-definition-paraphrase` (154 words) each exceeded the 150-word
-limit; neither involved repetition, a forbidden phrase, or a visible
-think-tag leak. Across that run: 0 type mismatches, 0 source mismatches,
-0 forbidden-phrase failures, 0 repetition failures, 0 visible-think-tag
-failures. **Deterministic concise output is the next open item** — see
-[Limitations and future improvements](#limitations-and-future-improvements)
-and `SESSION_SUMMARY.md`.
+**Latest verified result: 11/11 passed**, reproduced across three
+consecutive runs immediately before final acceptance (see
+`SESSION_SUMMARY.md`) with identical outcomes each time: 0 type
+mismatches, 0 source mismatches, 0 required-keyword failures, 0
+forbidden-phrase failures, 0 repetition failures, 0 visible-think-tag
+failures, 0 length failures. All 3 "unrelated" cases were confirmed
+blocked before any LLM call. See
+[Grounding safeguards](#grounding-safeguards) above for what makes this
+consistent rather than one lucky run.
 
 ---
 
 ## Limitations and future improvements
 
-- **Concise output is not yet consistent (next priority).** The
-  strengthened evaluation enforces a 150-word answer limit; the latest
-  personally verified run passed 9/11, with 2 answers exceeding that
-  limit (179 and 154 words). No repetition, forbidden phrases, or
-  think-tag leaks were involved — this is purely a length-consistency
-  issue. Fixing this without weakening the 150-word evaluation limit is
-  the next session's priority (see `SESSION_SUMMARY.md`).
+- **Residual model variance is mitigated, not eliminated.** The
+  grounding safeguards (see [above](#grounding-safeguards)) substantially
+  reduce repetition, length overruns, and unsupported-metric claims from
+  this 1.7B local model, and the bundled evaluation has passed 11/11
+  across three consecutive verified runs — but a small local model's
+  occasional variance on unseen questions/corpora can't be fully ruled
+  out by sampling settings alone, which is exactly why the evaluation's
+  deterministic checks exist as an independent backstop rather than
+  relying on generation settings.
 - **Document formats.** Only `.txt` and `.md` are currently wired into
   the ingestion loader (`src/ingestion/loader.py`), even though
   `pymupdf` and `python-docx` are already project dependencies. PDF and
